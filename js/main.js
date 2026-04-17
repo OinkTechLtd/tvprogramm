@@ -19,17 +19,21 @@ document.addEventListener('DOMContentLoaded', () => {
     mobileMenuOpen: false,
     modalOpen: false,
     modalChannel: null,
+    widgetMode: window.location.hash === '#widget',
   };
 
   // ======= DOM REFS =======
   const app = document.getElementById('app');
+  document.body.classList.toggle('widget-mode', state.widgetMode);
 
   // ======= RENDER FUNCTIONS =======
 
   function render() {
     app.innerHTML = '';
-    app.appendChild(renderHeader());
-    app.appendChild(renderMobileMenu());
+    if (!state.widgetMode) {
+      app.appendChild(renderHeader());
+      app.appendChild(renderMobileMenu());
+    }
 
     switch (state.page) {
       case 'home':    app.appendChild(renderHomePage()); break;
@@ -41,12 +45,18 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'contacts':app.appendChild(renderContactsPage()); break;
     }
 
-    app.appendChild(renderFooter());
+    if (!state.widgetMode) app.appendChild(renderFooter());
     if (state.modalOpen) app.appendChild(renderModal());
 
     bindEvents();
     updateClock();
   }
+
+  window.addEventListener('app:schedule-updated', () => {
+    if (state.page === 'home' || state.page === 'channel') {
+      render();
+    }
+  });
 
   // ======= HEADER =======
   function renderHeader() {
@@ -99,17 +109,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const wrap = document.createElement('div');
     wrap.className = 'page';
     wrap.innerHTML = `
-      ${renderHero()}
+      ${state.widgetMode ? '' : renderHero()}
       ${renderDateBar()}
       ${renderFilterBar()}
     `;
     const mainLayout = document.createElement('div');
     mainLayout.className = 'main-layout';
-    mainLayout.appendChild(renderSidebar());
+    if (!state.widgetMode) mainLayout.appendChild(renderSidebar());
     mainLayout.appendChild(renderScheduleSection());
     wrap.appendChild(mainLayout);
-    wrap.innerHTML += renderFeaturesSection();
-    wrap.innerHTML += renderFaqSection();
+    if (!state.widgetMode) {
+      wrap.innerHTML += renderFeaturesSection();
+      wrap.innerHTML += renderFaqSection();
+    }
     return wrap;
   }
 
@@ -118,7 +130,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <section class="hero">
         <div class="hero-eyebrow">📡 Расписание в реальном времени</div>
         <h1>TV-<span>CHECK</span><br>PROGRAMM</h1>
-        <p>Полное расписание всех российских и зарубежных телеканалов и радиостанций. Всегда актуально.</p>
+        <p>Полное расписание российских и зарубежных каналов. Сначала показываем локальный кэш, затем подгружаем фактический EPG.</p>
         <div class="hero-search" style="position:relative">
           <input type="text" id="heroSearch" placeholder="Введите название канала или передачи..." value="${state.search}" autocomplete="off">
           <div class="autocomplete" id="heroAutocomplete"></div>
@@ -473,6 +485,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderDocsPage() {
+    const widgetCode = `<iframe\n  src="${window.location.origin + window.location.pathname}#widget"\n  width="100%"\n  height="920"\n  style="border:0;border-radius:12px;overflow:hidden"\n  loading="lazy"\n  referrerpolicy="no-referrer-when-downgrade">\n</iframe>`;
     return staticPage('Документация', `
       <h3 style="margin-bottom:12px;font-size:18px">Как пользоваться TV-CHECKPROGRAMM</h3>
       <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px">
@@ -491,8 +504,16 @@ document.addEventListener('DOMContentLoaded', () => {
         <h4 style="font-size:15px;margin-bottom:8px;color:var(--accent2)">4. Полное расписание</h4>
         <p style="color:var(--muted);font-size:14px">Нажмите «Полное расписание →» на карточке канала, чтобы открыть подробную программу на весь день.</p>
       </div>
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px">
+        <h4 style="font-size:15px;margin-bottom:8px;color:var(--accent2)">5. Встраиваемый виджет</h4>
+        <p style="color:var(--muted);font-size:14px;margin-bottom:10px">Скопируйте код ниже и вставьте на свой сайт. Виджет откроется в iframe.</p>
+        <textarea id="widgetEmbedCode" readonly style="width:100%;min-height:160px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:12px;font-size:13px;line-height:1.6">${widgetCode}</textarea>
+        <div style="margin-top:10px">
+          <button class="btn-primary" id="copyWidgetCodeBtn">Скопировать код виджета</button>
+        </div>
+      </div>
       <h3 style="margin:24px 0 12px;font-size:18px">API (для разработчиков)</h3>
-      <p style="color:var(--muted);font-size:14px">В текущей версии публичный API не предоставляется. По вопросам интеграции напишите нам: <a href="mailto:api@tv-checkprogramm.ru" style="color:var(--accent2)">api@tv-checkprogramm.ru</a></p>
+      <p style="color:var(--muted);font-size:14px">Используется клиентская подгрузка XMLTV (EPG). Если источник недоступен, включается локальный резервный график. По вопросам интеграции напишите нам: <a href="mailto:api@tv-checkprogramm.ru" style="color:var(--accent2)">api@tv-checkprogramm.ru</a></p>
     `);
   }
 
@@ -859,6 +880,21 @@ document.addEventListener('DOMContentLoaded', () => {
     // Contact form
     const sendContactBtn = document.getElementById('sendContactBtn');
     if (sendContactBtn) sendContactBtn.addEventListener('click', () => showToast('✅ Сообщение отправлено! Мы ответим в течение 24 часов.'));
+
+    const copyWidgetCodeBtn = document.getElementById('copyWidgetCodeBtn');
+    const widgetEmbedCode = document.getElementById('widgetEmbedCode');
+    if (copyWidgetCodeBtn && widgetEmbedCode) {
+      copyWidgetCodeBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(widgetEmbedCode.value);
+          showToast('✅ Код виджета скопирован');
+        } catch (_) {
+          widgetEmbedCode.select();
+          document.execCommand('copy');
+          showToast('✅ Код виджета скопирован');
+        }
+      });
+    }
 
     // Time filters
     document.querySelectorAll('[data-time]').forEach(el => {
