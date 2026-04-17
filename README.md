@@ -180,6 +180,9 @@ async function fetchSchedule(channel, date) {
 
 MIT — свободное использование, модификация и коммерческое применение.
 
+
+Demo Theme https://tv-programma-test-byoinktechltdco-theme.vercel.app/
+
 ---
 
 *TV-CHECKPROGRAMM © 2025 · Данные EPG: [epg.pw](https://epg.pw)*
