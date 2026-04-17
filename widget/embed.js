@@ -8,7 +8,7 @@
   var theme = el.getAttribute('data-theme') || 'dark';
   var limit = el.getAttribute('data-limit') || '8';
   var iframe = document.createElement('iframe');
-  iframe.src = 'https://tv-checkprogramm.ru/widget/widget.html?channel=' + ch + '&theme=' + theme + '&limit=' + limit;
+  iframe.src = 'https://tv-checkprogramm.tatnet.app/widget/widget.html?channel=' + ch + '&theme=' + theme + '&limit=' + limit;
   iframe.style.cssText = 'width:100%;height:520px;border:none;border-radius:12px;display:block';
   iframe.title = 'TV-CHECKPROGRAMM Widget';
   iframe.loading = 'lazy';
