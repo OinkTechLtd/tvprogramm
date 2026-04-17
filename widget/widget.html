@@ -147,7 +147,14 @@
 
   if (theme === 'light') document.body.classList.add('light');
 
-  // Channel data (minimal subset)
+  const PROXIES = [
+    'https://secure-272717.vercel.app/',
+    'https://secure-272717.tatnet.app/',
+    'https://proxyvideo.vercel.app/',
+    'https://secure-ridge-22999-537c838d4a8a.herokuapp.com/',
+  ];
+
+  // Channel data (minimal subset, will be enriched from epg catalog)
   const CHANNELS = {
     1: { name: 'Первый канал', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/51/Pervyi_Kanal.svg/60px-Pervyi_Kanal.svg.png', color: '#1565C0' },
     2: { name: 'Россия 1', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e5/Russia-1.svg/60px-Russia-1.svg.png', color: '#C62828' },
@@ -175,12 +182,38 @@
 
   function moscowTime(ts) { return new Date(ts + 3 * 3600 * 1000); }
 
+  async function fetchViaProxies(url, timeout = 8000) {
+    let lastErr = null;
+    for (const proxy of PROXIES) {
+      try {
+        const resp = await fetch(proxy + encodeURIComponent(url), { signal: AbortSignal.timeout(timeout) });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const payload = await resp.json();
+        if (payload && typeof payload === 'object' && 'contents' in payload) {
+          return typeof payload.contents === 'string' ? JSON.parse(payload.contents) : payload.contents;
+        }
+        return payload;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    throw lastErr || new Error('Proxy chain failed');
+  }
+
   try {
+    // Try to enrich channel metadata (name/logo) from full epg catalog
+    try {
+      const catalog = await fetchViaProxies('https://epg.pw/api/channels.json', 12000);
+      const arr = Array.isArray(catalog) ? catalog : (catalog && catalog.channels) || [];
+      const remote = arr.find(i => Number(i.channel_id || i.id) === channelId);
+      if (remote) {
+        ch.name = remote.name || ch.name;
+        ch.logo = remote.logo || remote.icon || remote.image || ch.logo;
+      }
+    } catch (_) {}
+
     const url = `https://epg.pw/api/epg.json?channel_id=${channelId}&timezone=Europe/Moscow`;
-    const proxy = `https://secure-272717.tatnet.app/${encodeURIComponent(url)}`;
-    const resp = await fetch(proxy, { signal: AbortSignal.timeout(8000) });
-    const wrapper = await resp.json();
-    const raw = JSON.parse(wrapper.contents);
+    const raw = await fetchViaProxies(url, 9000);
 
     const now = Date.now();
     const dayStart = new Date(dateStr + 'T00:00:00+03:00').getTime();

@@ -1,7 +1,7 @@
 // ================================================================
 // TV-CHECKPROGRAMM — EPG Engine
 // Fetches REAL schedule data from epg.pw (free, no API key)
-// CORS proxy: allorigins.win (free)
+// CORS proxies with automatic fallback
 // ================================================================
 
 'use strict';
@@ -10,9 +10,13 @@
 
 // ===== CONFIG =====
 const EPG_BASE = 'https://epg.pw/api/epg.json';
-const PROXY = 'https://secure-272717.vercel.app/';
-const PROXY2 = 'https://secure-272717.tatnet.app/';
-const PROXY3 = 'https://proxyvideo.vercel.app/';
+const CHANNELS_BASE = 'https://epg.pw/api/channels.json';
+const PROXIES = [
+  'https://secure-272717.vercel.app/',
+  'https://secure-272717.tatnet.app/',
+  'https://proxyvideo.vercel.app/',
+  'https://secure-ridge-22999-537c838d4a8a.herokuapp.com/',
+];
 const TZ = 'Europe/Moscow';
 const CACHE_TTL = 30 * 60 * 1000; // 30 min
 
@@ -68,13 +72,9 @@ async function fetchSchedule(channel, date) {
   if (cached) return cached;
 
   const url = `${EPG_BASE}?channel_id=${channel.id}&timezone=${TZ}`;
-  const proxyUrl = PROXY + encodeURIComponent(url);
 
   try {
-    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const wrapper = await resp.json();
-    const raw = JSON.parse(wrapper.contents);
+    const raw = await fetchViaProxies(url, 9000);
 
     const items = parseEpgData(raw, date);
     toCache(key, items);
@@ -83,6 +83,83 @@ async function fetchSchedule(channel, date) {
     console.warn(`EPG fetch failed for channel ${channel.id}:`, e.message);
     return null; // null = error, caller will show fallback
   }
+}
+
+async function fetchChannelCatalog(limit = 10000) {
+  const key = 'channels_catalog';
+  const cached = fromCache(key);
+  if (cached) return cached;
+
+  try {
+    const raw = await fetchViaProxies(CHANNELS_BASE, 12000);
+    const parsed = parseChannelCatalog(raw).slice(0, limit);
+    toCache(key, parsed);
+    return parsed;
+  } catch (e) {
+    console.warn('Channels catalog fetch failed:', e.message);
+    return [];
+  }
+}
+
+function parseChannelCatalog(raw) {
+  const arr =
+    Array.isArray(raw) ? raw :
+    Array.isArray(raw?.channels) ? raw.channels :
+    Array.isArray(raw?.channel) ? raw.channel :
+    Array.isArray(raw?.data) ? raw.data :
+    [];
+
+  return arr
+    .map((item, idx) => {
+      const id = Number(item.channel_id ?? item.id ?? item.cid);
+      if (!Number.isFinite(id) || id <= 0) return null;
+      const name = String(item.name ?? item.title ?? `Канал ${id}`).trim();
+      if (!name) return null;
+
+      const isRadio = /\bradio\b|радио|fm/i.test(name);
+      return {
+        id,
+        epgId: String(item.epg_id ?? item.slug ?? item.xmltv_id ?? ''),
+        name,
+        type: isRadio ? 'radio' : 'tv',
+        cat: isRadio ? 'radio-music' : 'entertainment',
+        logo: String(item.logo ?? item.icon ?? item.image ?? item.avatar ?? ''),
+        color: '#' + ((id * 2654435761 >>> 0).toString(16).slice(-6)).padStart(6, '0'),
+        abbr: makeAbbr(name),
+      };
+    })
+    .filter(Boolean);
+}
+
+function makeAbbr(name) {
+  const words = name.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+  return name.slice(0, 3).toUpperCase();
+}
+
+async function fetchViaProxies(url, timeoutMs = 8000) {
+  let lastErr = null;
+  for (const proxy of PROXIES) {
+    const proxyUrl = proxy + encodeURIComponent(url);
+    try {
+      const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(timeoutMs) });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const payload = await resp.json();
+      return unwrapPayload(payload);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error('All proxies failed');
+}
+
+function unwrapPayload(payload) {
+  if (payload && typeof payload === 'object' && 'contents' in payload) {
+    const contents = payload.contents;
+    if (typeof contents === 'string') return JSON.parse(contents);
+    return contents;
+  }
+  return payload;
 }
 
 function parseEpgData(raw, targetDate) {
@@ -165,6 +242,7 @@ window.EPG = {
   getCurrentShow,
   toDateStr,
   formatHHMM,
+  fetchChannelCatalog,
 };
 
 })();
