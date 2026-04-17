@@ -1,946 +1,962 @@
-// ============================================================
+// ================================================================
 // TV-CHECKPROGRAMM — Main Application
-// ============================================================
+// ================================================================
 
 'use strict';
 
 document.addEventListener('DOMContentLoaded', () => {
-  const { CHANNELS, CATEGORY_LABELS, getSchedule, getCurrentShow, isLive, getProgress, getCurrentTimeStr } = window.AppData;
+  const { fetchSchedule, isLive, getProgress, getLiveIndex, getCurrentShow, toDateStr } = window.EPG;
+  const CHANNELS = window.CHANNELS;
+  const CAT_LABELS = window.CAT_LABELS;
+  const CAT_TAG = window.CAT_TAG;
 
-  // ======= STATE =======
-  const state = {
-    selectedDate: new Date(),
-    filter: 'all',       // all | tv | radio | movies | sport | news | kids | music | culture
+  // ===== STATE =====
+  const S = {
+    page: 'home',
+    date: new Date(),
+    filter: 'all',
     search: '',
-    page: 'home',        // home | channel | about | faq | policy | docs | contacts
-    selectedChannel: null,
-    channelPage: 0,
-    ITEMS_PER_PAGE: 12,
-    mobileMenuOpen: false,
-    modalOpen: false,
-    modalChannel: null,
-    widgetMode: window.location.hash === '#widget',
+    channelId: null,
+    offset: 0,
+    PER_PAGE: 10,
+    mobMenu: false,
+    modal: null,
   };
 
-  // ======= DOM REFS =======
+  // Schedule data store: { [channelId_dateStr]: items[] | 'loading' | 'error' }
+  const scheduleStore = {};
+
   const app = document.getElementById('app');
-  document.body.classList.toggle('widget-mode', state.widgetMode);
 
-  // ======= RENDER FUNCTIONS =======
-
+  // ===== MAIN RENDER =====
   function render() {
     app.innerHTML = '';
-    if (!state.widgetMode) {
-      app.appendChild(renderHeader());
-      app.appendChild(renderMobileMenu());
+    app.appendChild(mkHeader());
+    app.appendChild(mkMobMenu());
+    switch (S.page) {
+      case 'home':     app.appendChild(mkHome()); break;
+      case 'channel':  app.appendChild(mkChannelPage()); break;
+      case 'about':    app.appendChild(mkStatic('О сервисе', aboutHTML())); break;
+      case 'docs':     app.appendChild(mkStatic('Документация', docsHTML())); break;
+      case 'faq':      app.appendChild(mkStatic('FAQ', faqHTML())); break;
+      case 'policy':   app.appendChild(mkStatic('Политика конфиденциальности', policyHTML())); break;
+      case 'contacts': app.appendChild(mkStatic('Контакты', contactsHTML())); break;
+      case 'widget':   app.appendChild(mkStatic('Виджет', widgetHTML())); break;
     }
-
-    switch (state.page) {
-      case 'home':    app.appendChild(renderHomePage()); break;
-      case 'channel': app.appendChild(renderChannelPage()); break;
-      case 'about':   app.appendChild(renderAboutPage()); break;
-      case 'faq':     app.appendChild(renderFaqPage()); break;
-      case 'policy':  app.appendChild(renderPolicyPage()); break;
-      case 'docs':    app.appendChild(renderDocsPage()); break;
-      case 'contacts':app.appendChild(renderContactsPage()); break;
-    }
-
-    if (!state.widgetMode) app.appendChild(renderFooter());
-    if (state.modalOpen) app.appendChild(renderModal());
-
-    bindEvents();
-    updateClock();
+    app.appendChild(mkFooter());
+    if (S.modal) app.appendChild(mkModal());
+    bindAll();
+    // Trigger EPG loads for visible channels
+    if (S.page === 'home') loadVisibleSchedules();
+    if (S.page === 'channel') loadChannelDetail();
   }
 
-  window.addEventListener('app:schedule-updated', () => {
-    if (state.page === 'home' || state.page === 'channel') {
-      render();
-    }
-  });
-
-  // ======= HEADER =======
-  function renderHeader() {
-    const el = document.createElement('header');
-    el.className = 'header';
+  // ===== HEADER =====
+  function mkHeader() {
+    const el = ce('header', 'hdr');
     el.innerHTML = `
-      <div class="header-inner">
+      <div class="hdr-inner">
         <a class="logo" href="#" data-nav="home">
-          <div class="logo-icon">📺</div>
-          <span class="logo-text">TV-<span>CHECK</span></span>
+          <div class="logo-box">📺</div>
+          <span class="logo-txt">TV-<span>CHECK</span></span>
         </a>
-        <div class="header-search" style="position:relative">
-          <span class="search-icon">🔍</span>
-          <input type="text" id="headerSearch" placeholder="Поиск канала или передачи..." value="${state.search}" autocomplete="off">
-          <div class="autocomplete" id="headerAutocomplete"></div>
+        <div class="hdr-search" style="position:relative">
+          <span class="si">🔍</span>
+          <input type="text" id="hdrSearch" placeholder="Поиск канала или передачи..." value="${esc(S.search)}" autocomplete="off">
+          <div class="ac" id="hdrAc"></div>
         </div>
-        <nav class="header-nav">
-          <a href="#" data-nav="home" class="${state.page==='home'?'active':''}">Главная</a>
-          <a href="#" data-nav="about" class="${state.page==='about'?'active':''}">О сервисе</a>
-          <a href="#" data-nav="docs" class="${state.page==='docs'?'active':''}">Документация</a>
-          <a href="#" data-nav="faq" class="${state.page==='faq'?'active':''}">FAQ</a>
-          <span class="live-badge">В ЭФИРЕ</span>
+        <nav class="hdr-nav">
+          <a href="#" data-nav="home" class="${S.page==='home'?'on':''}">Главная</a>
+          <a href="#" data-nav="about" class="${S.page==='about'?'on':''}">О сервисе</a>
+          <a href="#" data-nav="docs" class="${S.page==='docs'?'on':''}">Документация</a>
+          <a href="#" data-nav="faq" class="${S.page==='faq'?'on':''}">FAQ</a>
+          <a href="#" data-nav="widget" class="${S.page==='widget'?'on':''}">Виджет</a>
+          <span class="live-dot">В ЭФИРЕ</span>
         </nav>
         <div class="burger" id="burgerBtn"><span></span><span></span><span></span></div>
-      </div>
-    `;
+      </div>`;
     return el;
   }
 
-  function renderMobileMenu() {
-    const el = document.createElement('div');
-    el.className = `mobile-menu${state.mobileMenuOpen ? ' open' : ''}`;
+  function mkMobMenu() {
+    const el = ce('div', `mob-menu${S.mobMenu?' open':''}`);
     el.innerHTML = `
-      <div class="mobile-search">
-        <input type="text" id="mobileSearch" placeholder="Поиск..." value="${state.search}">
-        <button class="btn-primary" id="mobileSearchBtn" style="padding:10px 16px">🔍</button>
+      <div class="mob-s">
+        <input type="text" id="mobSearch" placeholder="Поиск..." value="${esc(S.search)}">
+        <button class="btn-red" id="mobSearchBtn" style="padding:10px 14px;font-size:13px">🔍</button>
       </div>
       <a href="#" data-nav="home">🏠 Главная</a>
       <a href="#" data-nav="about">ℹ️ О сервисе</a>
       <a href="#" data-nav="docs">📄 Документация</a>
       <a href="#" data-nav="faq">❓ FAQ</a>
+      <a href="#" data-nav="widget">🔧 Виджет для сайта</a>
       <a href="#" data-nav="policy">🔒 Политика конфиденциальности</a>
-      <a href="#" data-nav="contacts">📧 Контакты</a>
-    `;
+      <a href="#" data-nav="contacts">📧 Контакты</a>`;
     return el;
   }
 
-  // ======= HOME PAGE =======
-  function renderHomePage() {
-    const wrap = document.createElement('div');
-    wrap.className = 'page';
-    wrap.innerHTML = `
-      ${state.widgetMode ? '' : renderHero()}
-      ${renderDateBar()}
-      ${renderFilterBar()}
-    `;
-    const mainLayout = document.createElement('div');
-    mainLayout.className = 'main-layout';
-    if (!state.widgetMode) mainLayout.appendChild(renderSidebar());
-    mainLayout.appendChild(renderScheduleSection());
-    wrap.appendChild(mainLayout);
-    if (!state.widgetMode) {
-      wrap.innerHTML += renderFeaturesSection();
-      wrap.innerHTML += renderFaqSection();
-    }
+  // ===== HOME =====
+  function mkHome() {
+    const wrap = ce('div', 'page');
+    wrap.innerHTML = mkHeroHTML() + mkDateBarHTML() + mkFilterBarHTML();
+    const layout = ce('div', 'layout');
+    layout.appendChild(mkSidebar());
+    layout.appendChild(mkScheduleSection());
+    wrap.appendChild(layout);
+    wrap.innerHTML += mkFeaturesHTML() + mkFaqHTML();
     return wrap;
   }
 
-  function renderHero() {
+  function mkHeroHTML() {
+    const tvCount = CHANNELS.filter(c => c.type === 'tv').length;
+    const rCount  = CHANNELS.filter(c => c.type === 'radio').length;
     return `
       <section class="hero">
-        <div class="hero-eyebrow">📡 Расписание в реальном времени</div>
+        <div class="hero-tag">📡 Реальное расписание в реальном времени</div>
         <h1>TV-<span>CHECK</span><br>PROGRAMM</h1>
-        <p>Полное расписание российских и зарубежных каналов. Сначала показываем локальный кэш, затем подгружаем фактический EPG.</p>
-        <div class="hero-search" style="position:relative">
-          <input type="text" id="heroSearch" placeholder="Введите название канала или передачи..." value="${state.search}" autocomplete="off">
-          <div class="autocomplete" id="heroAutocomplete"></div>
-          <button class="btn-primary" id="heroSearchBtn">Найти →</button>
+        <p>Актуальное расписание ${tvCount}+ телеканалов и ${rCount}+ радиостанций. Данные обновляются автоматически.</p>
+        <div class="hero-form" style="position:relative">
+          <input type="text" id="heroSearch" placeholder="Первый канал, НТВ, Eurosport..." value="${esc(S.search)}" autocomplete="off">
+          <div class="ac" id="heroAc"></div>
+          <button class="btn-red" id="heroBtn">Найти →</button>
         </div>
-        <div class="hero-stats">
-          <div class="hero-stat"><div class="num">${CHANNELS.filter(c=>c.type==='tv').length}+</div><div class="label">ТВ каналов</div></div>
-          <div class="hero-stat"><div class="num">${CHANNELS.filter(c=>c.type==='radio').length}+</div><div class="label">Радиостанций</div></div>
-          <div class="hero-stat"><div class="num">24/7</div><div class="label">Обновление</div></div>
-          <div class="hero-stat"><div class="num">7</div><div class="label">Дней расписания</div></div>
+        <div class="hero-nums">
+          <div class="h-num"><div class="n">${tvCount}+</div><div class="l">ТВ каналов</div></div>
+          <div class="h-num"><div class="n">${rCount}+</div><div class="l">Радиостанций</div></div>
+          <div class="h-num"><div class="n">LIVE</div><div class="l">Данные EPG</div></div>
+          <div class="h-num"><div class="n">7</div><div class="l">Дней вперёд</div></div>
         </div>
-      </section>
-    `;
+      </section>`;
   }
 
-  function renderDateBar() {
+  function mkDateBarHTML() {
     const today = new Date();
-    const dates = [];
+    const DAY = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+    const MON = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+    let html = '<div class="datebar"><div class="datebar-inner">';
     for (let i = -3; i <= 7; i++) {
-      const d = new Date(today);
-      d.setDate(today.getDate() + i);
-      dates.push(d);
+      const d = new Date(today); d.setDate(today.getDate() + i);
+      const sel = d.toDateString() === S.date.toDateString();
+      const isT = d.toDateString() === today.toDateString();
+      const isY = i === -1;
+      let label = `${DAY[d.getDay()]}, ${d.getDate()} ${MON[d.getMonth()]}`;
+      if (isT) label = 'Сегодня';
+      else if (isY) label = 'Вчера';
+      else if (i === 1) label = 'Завтра';
+      html += `<button class="d-btn${sel?' on':''}${isT?' today-btn':''}" data-date="${d.toISOString()}">${label}</button>`;
     }
-    const days = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
-    const months = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
-    let html = '<div class="date-bar"><div class="date-bar-inner">';
-    dates.forEach(d => {
-      const isSel = d.toDateString() === state.selectedDate.toDateString();
-      const isToday = d.toDateString() === today.toDateString();
-      const isYes = d.toDateString() === new Date(today.getTime() - 86400000).toDateString();
-      let label = `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]}`;
-      if (isToday) label = 'Сегодня';
-      else if (isYes) label = 'Вчера';
-      else if (d.getTime() === today.getTime() + 86400000) label = 'Завтра';
-      html += `<button class="date-btn${isSel?' active':''}${isToday?' today':''}" data-date="${d.toISOString()}">${label}</button>`;
-    });
-    html += '</div></div>';
-    return html;
+    return html + '</div></div>';
   }
 
-  function renderFilterBar() {
+  function mkFilterBarHTML() {
     const filters = [
-      { key: 'all', label: '📺 Все' },
-      { key: 'tv', label: '🖥 ТВ', type: 'tv' },
-      { key: 'radio', label: '📻 Радио', type: 'radio' },
-      { key: 'movies', label: '🎬 Кино', type: 'movies' },
-      { key: 'sport', label: '⚽ Спорт', type: 'sport' },
-      { key: 'news', label: '📰 Новости', type: 'news' },
-      { key: 'kids', label: '🧸 Детские', type: 'kids' },
-      { key: 'music', label: '🎵 Музыкальные', type: 'music' },
-      { key: 'culture', label: '🎭 Культура', type: 'culture' },
+      {k:'all',l:'📺 Все'},
+      {k:'tv',l:'🖥 ТВ'},
+      {k:'radio',l:'📻 Радио'},
+      {k:'movies',l:'🎬 Кино'},
+      {k:'sport',l:'⚽ Спорт'},
+      {k:'news',l:'📰 Новости'},
+      {k:'kids',l:'🧸 Детские'},
+      {k:'music',l:'🎵 Музыка'},
+      {k:'doc',l:'🔭 Документальные'},
     ];
-    let html = '<div class="filter-bar"><div class="filter-bar-inner">';
+    let html = '<div class="filterbar"><div class="filterbar-inner">';
     filters.forEach(f => {
-      html += `<button class="filter-chip${state.filter===f.key?' active':''}" data-filter="${f.key}" data-type="${f.type||''}">${f.label}</button>`;
+      html += `<button class="chip${S.filter===f.k?' on':''}" data-c="${f.k}">${f.l}</button>`;
     });
-    html += `<div class="time-filter" style="margin-left:auto">
-      <button class="time-btn" data-time="all">Весь день</button>
-      <button class="time-btn" data-time="morning">Утро</button>
-      <button class="time-btn" data-time="day">День</button>
-      <button class="time-btn" data-time="evening">Вечер</button>
-    </div>`;
     html += '</div></div>';
     return html;
   }
 
-  function renderSidebar() {
-    const el = document.createElement('aside');
-    el.className = 'sidebar';
-    const tvCats = ['federal','entertainment','news','sport','kids','music','culture','movies','regional'];
-    const radioCats = ['radio-music','radio-news','radio-talk','radio-sport'];
+  function mkSidebar() {
+    const el = ce('aside', 'sidebar');
+    const tvCats = ['federal','entertainment','news','sport','kids','music','culture','movies','doc'];
+    const rCats  = ['radio-music','radio-news','radio-talk','radio-sport'];
 
-    let html = `<div class="sidebar-section">
-      <div class="sidebar-title">Телеканалы</div>
-      <div class="sidebar-link${state.filter==='tv'?'  active':''}" data-filter="tv"><span class="icon">🖥</span> Все ТВ <span class="count">${CHANNELS.filter(c=>c.type==='tv').length}</span></div>`;
-
+    let html = `<div class="sb-box"><div class="sb-title">Телеканалы</div>
+      <button class="sb-lnk${S.filter==='tv'?' on':''}" data-filter="tv"><span class="ic">🖥</span> Все ТВ <span class="cnt">${CHANNELS.filter(c=>c.type==='tv').length}</span></button>`;
     tvCats.forEach(cat => {
-      const count = CHANNELS.filter(c => c.category === cat).length;
-      if (!count) return;
-      html += `<div class="sidebar-link" data-cat="${cat}"><span class="icon">▸</span> ${window.AppData.CATEGORY_LABELS[cat]||cat} <span class="count">${count}</span></div>`;
+      const n = CHANNELS.filter(c => c.cat === cat).length;
+      if (!n) return;
+      html += `<button class="sb-lnk" data-filter="cat:${cat}"><span class="ic">▸</span> ${CAT_LABELS[cat]||cat} <span class="cnt">${n}</span></button>`;
     });
-
-    html += `</div><div class="sidebar-section">
-      <div class="sidebar-title">Радиостанции</div>
-      <div class="sidebar-link${state.filter==='radio'?' active':''}" data-filter="radio"><span class="icon">📻</span> Всё Радио <span class="count">${CHANNELS.filter(c=>c.type==='radio').length}</span></div>`;
-
-    radioCats.forEach(cat => {
-      const count = CHANNELS.filter(c => c.category === cat).length;
-      if (!count) return;
-      html += `<div class="sidebar-link" data-cat="${cat}"><span class="icon">▸</span> ${window.AppData.CATEGORY_LABELS[cat]||cat} <span class="count">${count}</span></div>`;
+    html += `</div><div class="sb-box"><div class="sb-title">Радиостанции</div>
+      <button class="sb-lnk${S.filter==='radio'?' on':''}" data-filter="radio"><span class="ic">📻</span> Всё Радио <span class="cnt">${CHANNELS.filter(c=>c.type==='radio').length}</span></button>`;
+    rCats.forEach(cat => {
+      const n = CHANNELS.filter(c => c.cat === cat).length;
+      if (!n) return;
+      html += `<button class="sb-lnk" data-filter="cat:${cat}"><span class="ic">▸</span> ${CAT_LABELS[cat]||cat} <span class="cnt">${n}</span></button>`;
     });
-
-    html += `</div><div class="sidebar-section">
-      <div class="sidebar-title">Информация</div>
-      <div class="sidebar-link" data-nav="about"><span class="icon">ℹ️</span> О сервисе</div>
-      <div class="sidebar-link" data-nav="faq"><span class="icon">❓</span> Вопросы и ответы</div>
-      <div class="sidebar-link" data-nav="docs"><span class="icon">📄</span> Документация</div>
-      <div class="sidebar-link" data-nav="policy"><span class="icon">🔒</span> Политика</div>
-      <div class="sidebar-link" data-nav="contacts"><span class="icon">📧</span> Контакты</div>
+    html += `</div><div class="sb-box"><div class="sb-title">Навигация</div>
+      <button class="sb-lnk" data-nav="about"><span class="ic">ℹ️</span> О сервисе</button>
+      <button class="sb-lnk" data-nav="faq"><span class="ic">❓</span> FAQ</button>
+      <button class="sb-lnk" data-nav="widget"><span class="ic">🔧</span> Виджет</button>
+      <button class="sb-lnk" data-nav="docs"><span class="ic">📄</span> Документация</button>
     </div>`;
     el.innerHTML = html;
     return el;
   }
 
-  function renderScheduleSection() {
-    const wrap = document.createElement('div');
+  function filteredChannels() {
+    let ch = CHANNELS;
+    if (S.filter === 'tv') ch = ch.filter(c => c.type === 'tv');
+    else if (S.filter === 'radio') ch = ch.filter(c => c.type === 'radio');
+    else if (S.filter === 'movies') ch = ch.filter(c => c.cat === 'movies');
+    else if (S.filter === 'sport') ch = ch.filter(c => c.cat === 'sport' || c.cat === 'radio-sport');
+    else if (S.filter === 'news') ch = ch.filter(c => c.cat === 'news' || c.cat === 'radio-news');
+    else if (S.filter === 'kids') ch = ch.filter(c => c.cat === 'kids');
+    else if (S.filter === 'music') ch = ch.filter(c => c.cat === 'music' || c.cat === 'radio-music');
+    else if (S.filter === 'doc') ch = ch.filter(c => c.cat === 'doc');
+    else if (S.filter.startsWith('cat:')) { const cat = S.filter.slice(4); ch = ch.filter(c => c.cat === cat); }
 
-    // Filter channels
-    let channels = CHANNELS.filter(c => {
-      if (state.filter === 'tv') return c.type === 'tv';
-      if (state.filter === 'radio') return c.type === 'radio';
-      if (state.filter === 'movies') return c.category === 'movies';
-      if (state.filter === 'sport') return c.category === 'sport';
-      if (state.filter === 'news') return c.category === 'news';
-      if (state.filter === 'kids') return c.category === 'kids';
-      if (state.filter === 'music') return c.category === 'music' || c.category === 'radio-music';
-      if (state.filter === 'culture') return c.category === 'culture';
-      return true;
-    });
-
-    // Search
-    if (state.search.trim()) {
-      const q = state.search.trim().toLowerCase();
-      channels = channels.filter(c => c.name.toLowerCase().includes(q));
+    if (S.search.trim()) {
+      const q = S.search.trim().toLowerCase();
+      ch = ch.filter(c => c.name.toLowerCase().includes(q));
     }
+    return ch;
+  }
 
-    // Pagination
+  function mkScheduleSection() {
+    const wrap = ce('div', '');
+    const channels = filteredChannels();
     const total = channels.length;
-    const shown = channels.slice(0, (state.channelPage + 1) * state.ITEMS_PER_PAGE);
+    const shown = channels.slice(0, (S.offset + 1) * S.PER_PAGE);
 
-    if (state.search) {
-      const lbl = document.createElement('div');
-      lbl.className = 'search-results-bar';
-      lbl.innerHTML = `<div class="search-results-label">Найдено каналов: <strong>${total}</strong> по запросу "<strong>${state.search}</strong>"</div>`;
+    if (S.search) {
+      const lbl = ce('div', '');
+      lbl.innerHTML = `<div style="padding:0 0 12px;font-size:13px;color:var(--muted)">Найдено: <strong style="color:var(--text)">${total}</strong> каналов по запросу "<strong style="color:var(--text)">${esc(S.search)}</strong>"</div>`;
       wrap.appendChild(lbl);
     }
 
-    const grid = document.createElement('div');
-    grid.className = 'schedule-grid';
+    const grid = ce('div', 'ch-grid');
 
     if (shown.length === 0) {
-      grid.innerHTML = `<div class="empty-state"><div class="big-icon">📭</div><h3>Ничего не найдено</h3><p>Попробуйте изменить фильтр или поисковый запрос</p></div>`;
+      grid.innerHTML = `<div class="empty"><div class="ico">📭</div><h3>Ничего не найдено</h3><p>Попробуйте изменить фильтр или запрос</p></div>`;
     } else {
       shown.forEach((ch, i) => {
-        const schedule = getSchedule(ch.id, state.selectedDate);
-        grid.appendChild(renderChannelCard(ch, schedule, i));
+        grid.appendChild(mkChannelCard(ch, i));
       });
     }
-
     wrap.appendChild(grid);
 
     if (shown.length < total) {
-      const more = document.createElement('div');
-      more.className = 'load-more-wrap';
+      const more = ce('div', 'load-more');
       more.innerHTML = `<button class="btn-outline" id="loadMoreBtn">Показать ещё каналы (${total - shown.length})</button>`;
       wrap.appendChild(more);
     }
-
     return wrap;
   }
 
-  function renderChannelCard(ch, schedule, animIdx) {
-    const card = document.createElement('div');
-    card.className = 'channel-card';
-    card.style.animationDelay = `${animIdx * 0.04}s`;
+  function mkChannelCard(ch, animIdx) {
+    const card = ce('div', 'ch-card');
+    card.style.animationDelay = `${Math.min(animIdx * 0.05, 0.4)}s`;
+    card.dataset.chid = ch.id;
 
-    const badgeClass = `badge-${ch.category === 'radio-music' || ch.category === 'radio-talk' || ch.category === 'radio-news' || ch.category === 'radio-sport' ? 'radio' : ch.category}`;
-    const badgeLabel = ch.type === 'radio' ? 'Радио' : (window.AppData.CATEGORY_LABELS[ch.category] || ch.category);
+    const dateStr = toDateStr(S.date);
+    const storeKey = `${ch.id}_${dateStr}`;
+    const data = scheduleStore[storeKey];
 
-    const currentShow = getCurrentShow(schedule);
+    const tagClass = CAT_TAG[ch.cat] || 'tag-tv';
+    const tagLabel = CAT_LABELS[ch.cat] || ch.cat;
+    const typeTag  = ch.type === 'radio' ? 'tag-radio' : 'tag-tv';
+    const typeLabel = ch.type === 'radio' ? 'Радио' : 'ТВ';
 
-    // Show 5 items around current
-    const now = new Date();
-    const curIdx = schedule.findIndex(s => s === currentShow);
-    const startIdx = Math.max(0, curIdx - 1);
-    const visItems = schedule.slice(startIdx, startIdx + 6);
+    let schedHTML = '';
+    let nowHTML = '';
 
-    let schedHtml = visItems.map((item, i) => {
-      const absIdx = startIdx + i;
-      const live = isLive(item, schedule, absIdx);
-      const prog = live ? getProgress(item, schedule, absIdx) : 0;
-      return `<div class="schedule-item${live ? ' is-live' : ''}" data-show="${encodeURIComponent(item.title)}" data-channel="${ch.id}">
-        <div class="sched-time">${item.time}</div>
-        <div class="sched-info">
-          <div class="sched-title">${item.title}</div>
-          <div class="sched-desc">${item.genre}${live ? ` · ${item.duration} мин` : ''}</div>
-          ${live ? `<div class="now-progress"><div class="now-progress-bar" style="width:${prog}%"></div></div>` : ''}
-        </div>
-        ${live ? `<div class="sched-genre" style="color:var(--live)">В ЭФИРЕ</div>` : `<div class="sched-genre">${item.genre}</div>`}
+    if (!data || data === 'loading') {
+      schedHTML = `<div class="loading-box"><div class="spinner"></div></div>`;
+      nowHTML = `<div class="ch-now"><div class="lv">ЗАГРУЗКА</div><div class="lv-show">—</div></div>`;
+    } else if (data === 'error') {
+      schedHTML = `<div class="err-banner">⚠ Не удалось загрузить расписание для этого канала</div>`;
+      nowHTML = `<div class="ch-now"><div class="lv" style="color:var(--muted)">—</div><div class="lv-show">Нет данных</div></div>`;
+    } else if (data.length === 0) {
+      schedHTML = `<div style="padding:18px;color:var(--muted);font-size:13px;text-align:center">Расписание на эту дату недоступно</div>`;
+      nowHTML = `<div class="ch-now"><div class="lv" style="color:var(--muted)">—</div></div>`;
+    } else {
+      const liveIdx = getLiveIndex(data);
+      const startIdx = Math.max(0, liveIdx - 1);
+      const visible = data.slice(startIdx, startIdx + 5);
+      const current = data[liveIdx];
+
+      nowHTML = `<div class="ch-now">
+        <div class="lv">СЕЙЧАС</div>
+        <div class="lv-show">${esc(current ? current.title : '—')}</div>
       </div>`;
-    }).join('');
+
+      schedHTML = visible.map((item, i) => {
+        const absIdx = startIdx + i;
+        const live = isLive(item, data, absIdx);
+        const prog = live ? getProgress(item, data, absIdx) : 0;
+        return `<div class="sch-item${live?' live':''}" data-ch="${ch.id}" data-show="${esc(item.title)}">
+          <div class="sch-time">${esc(item.time)}</div>
+          <div class="sch-info">
+            <div class="sch-title">${esc(item.title)}</div>
+            <div class="sch-sub">${esc(item.genre || '')}${item.genre && item.duration ? ' · ' : ''}${item.duration ? item.duration+' мин' : ''}</div>
+            ${live ? `<div class="prog-bar"><div class="prog-fill" style="width:${prog}%"></div></div>` : ''}
+          </div>
+          ${live ? `<div class="sch-badge">В ЭФИРЕ</div>` : ''}
+        </div>`;
+      }).join('');
+    }
 
     card.innerHTML = `
-      <div class="channel-header" data-channel-open="${ch.id}">
-        <div class="channel-logo" style="border-color:${ch.color}22">
-          <div style="width:48px;height:48px;border-radius:10px;background:${ch.color}22;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:${ch.color}">${ch.icon}</div>
-        </div>
-        <div class="channel-meta">
-          <div class="channel-name">${ch.name}</div>
-          <div style="display:flex;align-items:center;gap:6px;margin-top:3px">
-            <span class="channel-type-badge ${badgeClass}">${badgeLabel}</span>
+      <div class="ch-head" data-modal="${ch.id}">
+        <div class="ch-logo">${chLogoHTML(ch)}</div>
+        <div class="ch-meta">
+          <div class="ch-name">${esc(ch.name)}</div>
+          <div class="ch-tags">
+            <span class="tag ${typeTag}">${typeLabel}</span>
+            <span class="tag ${tagClass}">${esc(tagLabel)}</span>
           </div>
         </div>
-        <div class="channel-now">
-          <div class="now-label">СЕЙЧАС</div>
-          <div class="now-show">${currentShow ? currentShow.title : '—'}</div>
-        </div>
+        ${nowHTML}
       </div>
-      <div class="channel-schedule">${schedHtml}</div>
-      <button class="show-more-btn" data-channel-detail="${ch.id}">Полное расписание →</button>
-    `;
+      <div class="sch-list">${schedHTML}</div>
+      <button class="more-btn" data-detail="${ch.id}">Полное расписание →</button>`;
     return card;
   }
 
-  function renderFeaturesSection() {
-    return `
-      <section class="features-section">
-        <div class="section-header">
-          <div class="section-eyebrow">Возможности</div>
-          <div class="section-title">ВСЁ ЧТО НУЖНО</div>
-          <p class="section-desc">Мощный агрегатор телерадиопрограмм с удобным интерфейсом и поиском по всем каналам</p>
-        </div>
-        <div class="features-grid">
-          <div class="feature-card">
-            <div class="feature-icon">📡</div>
-            <div class="feature-title">${CHANNELS.length}+ каналов и радиостанций</div>
-            <p class="feature-desc">Полный охват российских федеральных, региональных и тематических каналов, а также радиостанций.</p>
-          </div>
-          <div class="feature-card">
-            <div class="feature-icon">🔍</div>
-            <div class="feature-title">Умный поиск</div>
-            <p class="feature-desc">Ищите не только канал, но и конкретную передачу. Мгновенные подсказки в автодополнении.</p>
-          </div>
-          <div class="feature-card">
-            <div class="feature-icon">📅</div>
-            <div class="feature-title">Расписание на 7 дней</div>
-            <p class="feature-desc">Смотрите программу передач на неделю вперёд и назад — планируйте просмотр заранее.</p>
-          </div>
-          <div class="feature-card">
-            <div class="feature-icon">🟢</div>
-            <div class="feature-title">Текущий эфир</div>
-            <p class="feature-desc">Всегда видите, что идёт сейчас — с индикатором прогресса и оставшимся временем.</p>
-          </div>
-          <div class="feature-card">
-            <div class="feature-icon">📱</div>
-            <div class="feature-title">Мобильная версия</div>
-            <p class="feature-desc">Полностью адаптированный дизайн для смартфонов и планшетов любых размеров.</p>
-          </div>
-          <div class="feature-card">
-            <div class="feature-icon">⚡</div>
-            <div class="feature-title">Мгновенная загрузка</div>
-            <p class="feature-desc">Никаких лишних запросов — расписание загружается мгновенно, без ожиданий.</p>
-          </div>
-        </div>
-      </section>
-    `;
+  function chLogoHTML(ch) {
+    if (ch.logo) {
+      return `<img src="${ch.logo}" alt="${esc(ch.name)}" loading="lazy" onerror="this.parentNode.innerHTML='<span style=font-size:10px;font-weight:800;color:${encodeURIComponent(ch.color)}'>${esc(ch.abbr)}</span>'">`;
+    }
+    return `<span style="font-size:10px;font-weight:800;color:${ch.color}">${esc(ch.abbr)}</span>`;
   }
 
-  function renderFaqSection() {
-    return `
-      <section class="faq-section">
-        <div class="section-header">
-          <div class="section-eyebrow">FAQ</div>
-          <div class="section-title">ЧАСТЫЕ ВОПРОСЫ</div>
-        </div>
-        <div class="faq-list" style="max-width:760px;margin:0 auto">
-          ${[
-            ['Как найти расписание конкретного канала?', 'Используйте строку поиска в шапке или на главной странице. Введите название канала или радиостанции — результаты появятся мгновенно.'],
-            ['Можно ли посмотреть программу на несколько дней вперёд?', 'Да! Используйте навигацию по датам под строкой поиска — доступны данные на 7 дней вперёд и 3 дня назад.'],
-            ['Как часто обновляется расписание?', 'Расписание обновляется в режиме реального времени. Текущий эфир помечается зелёным индикатором «В ЭФИРЕ».'],
-            ['Доступна ли программа для радиостанций?', 'Да, TV-CHECKPROGRAMM охватывает более 20 популярных радиостанций со своим расписанием передач.'],
-            ['Почему нет моего канала?', 'Мы постоянно расширяем базу. Напишите нам через форму обратной связи — и мы добавим канал в ближайшем обновлении.'],
-          ].map(([q, a]) => `
-            <div class="faq-item">
-              <div class="faq-question">${q} <span class="chevron">▾</span></div>
-              <div class="faq-answer">${a}</div>
-            </div>
-          `).join('')}
-        </div>
-      </section>
-    `;
+  // ===== SCHEDULE LOADING =====
+  async function loadVisibleSchedules() {
+    const channels = filteredChannels().slice(0, (S.offset + 1) * S.PER_PAGE);
+    const dateStr = toDateStr(S.date);
+    const toLoad = channels.filter(ch => !scheduleStore[`${ch.id}_${dateStr}`]);
+
+    // Mark as loading
+    toLoad.forEach(ch => { scheduleStore[`${ch.id}_${dateStr}`] = 'loading'; });
+
+    // Load in batches of 3 (respect rate limits)
+    const BATCH = 3;
+    for (let i = 0; i < toLoad.length; i += BATCH) {
+      const batch = toLoad.slice(i, i + BATCH);
+      await Promise.all(batch.map(async ch => {
+        const key = `${ch.id}_${dateStr}`;
+        const result = await fetchSchedule(ch, S.date);
+        scheduleStore[key] = result === null ? 'error' : result;
+        // Patch the card DOM directly without full re-render
+        patchCardSchedule(ch, dateStr);
+      }));
+      // Tiny delay between batches
+      if (i + BATCH < toLoad.length) await sleep(200);
+    }
   }
 
-  // ======= CHANNEL DETAIL PAGE =======
-  function renderChannelPage() {
-    const ch = CHANNELS.find(c => c.id === state.selectedChannel);
-    if (!ch) { state.page = 'home'; return renderHomePage(); }
+  function patchCardSchedule(ch, dateStr) {
+    const card = document.querySelector(`.ch-card[data-chid="${ch.id}"]`);
+    if (!card) return;
+    const newCard = mkChannelCard(ch, 0);
+    newCard.style.animation = 'none';
+    card.innerHTML = newCard.innerHTML;
+    // Re-bind events on patched card
+    card.querySelectorAll('[data-modal]').forEach(el => el.addEventListener('click', () => openModal(ch.id)));
+    card.querySelectorAll('[data-detail]').forEach(el => el.addEventListener('click', () => goDetail(ch.id)));
+  }
 
-    const schedule = getSchedule(ch.id, state.selectedDate);
-    const badgeClass = `badge-${ch.type === 'radio' ? 'radio' : ch.category}`;
-    const page = document.createElement('div');
-    page.className = 'page';
+  // ===== CHANNEL DETAIL PAGE =====
+  function mkChannelPage() {
+    const ch = CHANNELS.find(c => c.id === S.channelId);
+    if (!ch) { S.page = 'home'; return mkHome(); }
 
-    let schedHtml = schedule.map((item, i) => {
-      const live = isLive(item, schedule, i);
-      const prog = live ? getProgress(item, schedule, i) : 0;
-      return `<div class="schedule-item${live ? ' is-live' : ''}">
-        <div class="sched-time">${item.time}</div>
-        <div class="sched-info">
-          <div class="sched-title">${item.title}</div>
-          <div class="sched-desc">${item.genre} · ${item.duration} мин</div>
-          ${live ? `<div class="now-progress"><div class="now-progress-bar" style="width:${prog}%"></div></div>` : ''}
-        </div>
-        ${live ? `<div class="sched-genre" style="color:var(--live)">В ЭФИРЕ</div>` : `<div class="sched-genre">${item.genre}</div>`}
-      </div>`;
-    }).join('');
+    const page = ce('div', 'page');
+    const tagClass = CAT_TAG[ch.cat] || 'tag-tv';
+    const tagLabel = CAT_LABELS[ch.cat] || ch.cat;
 
     page.innerHTML = `
-      <div class="channel-detail-header">
-        <div class="channel-detail-inner">
-          <div class="channel-detail-logo">
-            <div style="width:80px;height:80px;border-radius:16px;background:${ch.color}22;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;color:${ch.color}">${ch.icon}</div>
-          </div>
-          <div class="channel-detail-meta">
-            <div style="margin-bottom:8px"><a href="#" data-nav="home" style="color:var(--muted);font-size:13px">← Все каналы</a></div>
-            <div class="channel-detail-name">${ch.name}</div>
-            <div class="channel-detail-info">
-              <span class="channel-type-badge ${badgeClass}" style="margin-right:8px">${ch.type === 'radio' ? 'Радио' : (window.AppData.CATEGORY_LABELS[ch.category]||ch.category)}</span>
-              · Расписание: ${formatDate(state.selectedDate)}
+      <div class="ch-detail-hdr">
+        <div class="ch-detail-inner">
+          <div class="ch-detail-logo">${chLogoHTML(ch)}</div>
+          <div>
+            <div style="margin-bottom:6px"><a href="#" data-nav="home" style="color:var(--muted);font-size:13px">← Все каналы</a></div>
+            <div class="ch-detail-name">${esc(ch.name)}</div>
+            <div class="ch-detail-sub">
+              <span class="tag ${CAT_TAG[ch.cat]||'tag-tv'}">${esc(tagLabel)}</span>
+              <span>·</span>
+              <span id="detailDateLabel">${formatDate(S.date)}</span>
+              <span id="apiStatus" class="api-badge api-load">🔄 Загрузка...</span>
             </div>
           </div>
         </div>
       </div>
-      ${renderDateBar()}
-      <div class="main-layout" style="grid-template-columns:1fr;max-width:860px">
-        <div>
-          <div class="channel-card">${schedHtml}</div>
+      ${mkDateBarHTML()}
+      <div style="max-width:860px;margin:0 auto;padding:20px">
+        <div class="ch-card" id="detailCard">
+          <div class="loading-box" style="padding:40px"><div class="spinner"></div></div>
         </div>
-      </div>
-    `;
+      </div>`;
     return page;
   }
 
-  // ======= STATIC PAGES =======
-  function renderAboutPage() {
-    return staticPage('О сервисе TV-CHECKPROGRAMM', `
-      <p>TV-CHECKPROGRAMM — современный агрегатор программы телепередач и радиоэфира для России. Мы объединяем в одном месте расписание более ${CHANNELS.filter(c=>c.type==='tv').length} телеканалов и ${CHANNELS.filter(c=>c.type==='radio').length} радиостанций.</p>
-      <h3 style="margin:24px 0 10px;font-size:18px">Наша миссия</h3>
-      <p>Дать зрителям и слушателям удобный, современный и быстрый инструмент для планирования просмотра — без рекламы и лишних кликов.</p>
-      <h3 style="margin:24px 0 10px;font-size:18px">Что мы предлагаем</h3>
-      <ul style="color:var(--muted);line-height:2;padding-left:20px">
-        <li>Полное суточное расписание любого ТВ-канала</li>
-        <li>Расписание радиостанций с жанровой фильтрацией</li>
-        <li>Поиск по названию передачи или канала</li>
-        <li>Программа на 7 дней вперёд</li>
-        <li>Индикатор текущего эфира в реальном времени</li>
-        <li>Адаптивный дизайн для любых устройств</li>
-      </ul>
-      <h3 style="margin:24px 0 10px;font-size:18px">Команда</h3>
-      <p style="color:var(--muted)">Мы небольшая команда разработчиков и редакторов, влюблённых в телевидение и радио. Работаем с 2024 года.</p>
-    `);
-  }
+  async function loadChannelDetail() {
+    const ch = CHANNELS.find(c => c.id === S.channelId);
+    if (!ch) return;
+    const dateStr = toDateStr(S.date);
+    const key = `${ch.id}_${dateStr}`;
+    const card = document.getElementById('detailCard');
+    const status = document.getElementById('apiStatus');
+    if (!card) return;
 
-  function renderDocsPage() {
-    const widgetCode = `<iframe\n  src="${window.location.origin + window.location.pathname}#widget"\n  width="100%"\n  height="920"\n  style="border:0;border-radius:12px;overflow:hidden"\n  loading="lazy"\n  referrerpolicy="no-referrer-when-downgrade">\n</iframe>`;
-    return staticPage('Документация', `
-      <h3 style="margin-bottom:12px;font-size:18px">Как пользоваться TV-CHECKPROGRAMM</h3>
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px">
-        <h4 style="font-size:15px;margin-bottom:8px;color:var(--accent2)">1. Поиск канала</h4>
-        <p style="color:var(--muted);font-size:14px">Введите название канала или радиостанции в строку поиска. Автодополнение предложит совпадения мгновенно.</p>
-      </div>
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px">
-        <h4 style="font-size:15px;margin-bottom:8px;color:var(--accent2)">2. Выбор даты</h4>
-        <p style="color:var(--muted);font-size:14px">Используйте ленту дат под поисковой строкой. Доступны данные за 3 прошедших и 7 следующих дней.</p>
-      </div>
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px">
-        <h4 style="font-size:15px;margin-bottom:8px;color:var(--accent2)">3. Фильтрация</h4>
-        <p style="color:var(--muted);font-size:14px">Фильтруйте каналы по типу (ТВ/Радио) или тематике (Спорт, Новости, Кино, Детские и т.д.).</p>
-      </div>
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px">
-        <h4 style="font-size:15px;margin-bottom:8px;color:var(--accent2)">4. Полное расписание</h4>
-        <p style="color:var(--muted);font-size:14px">Нажмите «Полное расписание →» на карточке канала, чтобы открыть подробную программу на весь день.</p>
-      </div>
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px">
-        <h4 style="font-size:15px;margin-bottom:8px;color:var(--accent2)">5. Встраиваемый виджет</h4>
-        <p style="color:var(--muted);font-size:14px;margin-bottom:10px">Скопируйте код ниже и вставьте на свой сайт. Виджет откроется в iframe.</p>
-        <textarea id="widgetEmbedCode" readonly style="width:100%;min-height:160px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:12px;font-size:13px;line-height:1.6">${widgetCode}</textarea>
-        <div style="margin-top:10px">
-          <button class="btn-primary" id="copyWidgetCodeBtn">Скопировать код виджета</button>
+    let data = scheduleStore[key];
+    if (!data || data === 'loading') {
+      scheduleStore[key] = 'loading';
+      data = await fetchSchedule(ch, S.date);
+      scheduleStore[key] = data === null ? 'error' : data;
+      data = scheduleStore[key];
+    }
+
+    if (status) {
+      if (data === 'error') { status.className = 'api-badge api-err'; status.textContent = '⚠ Ошибка загрузки'; }
+      else { status.className = 'api-badge api-ok'; status.textContent = `✓ ${Array.isArray(data) ? data.length : 0} передач`; }
+    }
+
+    if (!card) return;
+    if (data === 'error') {
+      card.innerHTML = `<div class="err-banner" style="margin:20px">⚠ Не удалось загрузить расписание. Возможно, EPG данные для этого канала временно недоступны.</div>`;
+      return;
+    }
+    if (!Array.isArray(data) || data.length === 0) {
+      card.innerHTML = `<div class="empty" style="padding:40px"><div class="ico">📅</div><h3>Нет данных</h3><p>Расписание на эту дату недоступно</p></div>`;
+      return;
+    }
+
+    const liveIdx = getLiveIndex(data);
+    let html = data.map((item, i) => {
+      const live = isLive(item, data, i);
+      const prog = live ? getProgress(item, data, i) : 0;
+      return `<div class="sch-item${live?' live':''}">
+        <div class="sch-time">${esc(item.time)}</div>
+        <div class="sch-info">
+          <div class="sch-title">${esc(item.title)}</div>
+          <div class="sch-sub">${esc(item.genre||'')}${item.genre&&item.duration?' · ':''}${item.duration?item.duration+' мин':''}</div>
+          ${item.desc ? `<div class="sch-sub" style="margin-top:2px;opacity:.7">${esc(item.desc.slice(0,120))}${item.desc.length>120?'…':''}</div>` : ''}
+          ${live ? `<div class="prog-bar"><div class="prog-fill" style="width:${prog}%"></div></div>` : ''}
         </div>
-      </div>
-      <h3 style="margin:24px 0 12px;font-size:18px">API (для разработчиков)</h3>
-      <p style="color:var(--muted);font-size:14px">Используется клиентская подгрузка XMLTV (EPG). Если источник недоступен, включается локальный резервный график. По вопросам интеграции напишите нам: <a href="mailto:api@tv-checkprogramm.ru" style="color:var(--accent2)">api@tv-checkprogramm.ru</a></p>
-    `);
-  }
-
-  function renderFaqPage() {
-    const faqs = [
-      ['Как найти расписание конкретного канала?', 'Используйте строку поиска в шапке сайта или на главной странице. Введите любую часть названия канала — результаты появятся мгновенно.'],
-      ['Можно ли посмотреть программу на несколько дней?', 'Да! Навигация по датам позволяет смотреть программу на 7 дней вперёд и 3 дня назад от текущего дня.'],
-      ['Как часто обновляется расписание?', 'Мы обновляем данные ежедневно. Текущий эфир помечается индикатором «В ЭФИРЕ» в реальном времени.'],
-      ['Есть ли радиостанции?', 'Да, база включает более 20 популярных FM и интернет-радиостанций России с подробным расписанием.'],
-      ['Почему нет нужного канала?', 'Напишите нам через страницу контактов — и мы постараемся добавить канал в ближайшем обновлении.'],
-      ['Сайт бесплатный?', 'Да, TV-CHECKPROGRAMM полностью бесплатен для пользователей.'],
-      ['Как сообщить об ошибке в расписании?', 'Напишите на contact@tv-checkprogramm.ru с указанием канала и даты ошибочного расписания.'],
-      ['Есть ли мобильное приложение?', 'Мобильного приложения пока нет, но сайт полностью адаптирован для мобильных устройств.'],
-    ];
-    return staticPage('Часто задаваемые вопросы', faqs.map(([q,a]) => `
-      <div class="faq-item">
-        <div class="faq-question">${q} <span class="chevron">▾</span></div>
-        <div class="faq-answer">${a}</div>
-      </div>
-    `).join(''));
-  }
-
-  function renderPolicyPage() {
-    return staticPage('Политика конфиденциальности', `
-      <p style="color:var(--muted);font-size:13px;margin-bottom:20px">Последнее обновление: 1 января 2025 года</p>
-      <h3 style="margin:20px 0 8px;font-size:16px">1. Общие положения</h3>
-      <p style="color:var(--muted);font-size:14px;line-height:1.8">TV-CHECKPROGRAMM (далее — «Сервис») уважает конфиденциальность пользователей. Настоящая Политика описывает, какие данные мы собираем и как их используем.</p>
-      <h3 style="margin:20px 0 8px;font-size:16px">2. Собираемые данные</h3>
-      <p style="color:var(--muted);font-size:14px;line-height:1.8">Сервис может собирать анонимную статистику использования (просматриваемые страницы, время сессий) для улучшения качества. Персональные данные не собираются без явного согласия пользователя.</p>
-      <h3 style="margin:20px 0 8px;font-size:16px">3. Cookies</h3>
-      <p style="color:var(--muted);font-size:14px;line-height:1.8">Мы используем технические cookies для сохранения предпочтений (выбранная дата, фильтр). Данные не передаются третьим лицам.</p>
-      <h3 style="margin:20px 0 8px;font-size:16px">4. Контакты</h3>
-      <p style="color:var(--muted);font-size:14px">По вопросам конфиденциальности: <a href="mailto:privacy@tv-checkprogramm.ru" style="color:var(--accent2)">privacy@tv-checkprogramm.ru</a></p>
-    `);
-  }
-
-  function renderContactsPage() {
-    return staticPage('Контакты', `
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:32px">
-        ${[
-          ['📧','Email','contact@tv-checkprogramm.ru'],
-          ['💬','Telegram','@tvcheckprogramm'],
-          ['🐦','Twitter/X','@tvcheckprog'],
-          ['📍','Офис','Москва, Россия'],
-        ].map(([icon, label, val]) => `
-          <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;text-align:center">
-            <div style="font-size:32px;margin-bottom:8px">${icon}</div>
-            <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:4px">${label}</div>
-            <div style="font-size:14px;font-weight:600">${val}</div>
-          </div>
-        `).join('')}
-      </div>
-      <h3 style="margin-bottom:16px;font-size:18px">Написать нам</h3>
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px">
-        <div style="display:grid;gap:12px">
-          <input type="text" placeholder="Ваше имя" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px 16px;color:var(--text);font-family:var(--font-body);font-size:14px;outline:none;width:100%">
-          <input type="email" placeholder="Email" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px 16px;color:var(--text);font-family:var(--font-body);font-size:14px;outline:none;width:100%">
-          <textarea rows="5" placeholder="Ваше сообщение..." style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px 16px;color:var(--text);font-family:var(--font-body);font-size:14px;outline:none;width:100%;resize:vertical"></textarea>
-          <button class="btn-primary" id="sendContactBtn" style="width:fit-content">Отправить →</button>
-        </div>
-      </div>
-    `);
-  }
-
-  function staticPage(title, html) {
-    const page = document.createElement('div');
-    page.className = 'page';
-    page.innerHTML = `
-      <div style="background:var(--bg2);border-bottom:1px solid var(--border);padding:32px 24px">
-        <div style="max-width:860px;margin:0 auto">
-          <div style="margin-bottom:8px"><a href="#" data-nav="home" style="color:var(--muted);font-size:13px">← На главную</a></div>
-          <h1 style="font-family:var(--font-display);font-size:36px;letter-spacing:2px">${title}</h1>
-        </div>
-      </div>
-      <div style="max-width:860px;margin:0 auto;padding:32px 24px;line-height:1.7">${html}</div>
-    `;
-    return page;
-  }
-
-  // ======= MODAL =======
-  function renderModal() {
-    if (!state.modalChannel) return document.createElement('div');
-    const ch = state.modalChannel;
-    const schedule = getSchedule(ch.id, state.selectedDate);
-    const ov = document.createElement('div');
-    ov.className = 'modal-overlay open';
-    ov.id = 'modalOverlay';
-
-    let items = schedule.map((item, i) => {
-      const live = isLive(item, schedule, i);
-      return `<div class="modal-sched-item${live ? ' is-live' : ''}">
-        <div class="modal-time">${item.time}</div>
-        <div><div class="modal-show-name">${item.title}</div><div style="font-size:12px;color:var(--muted)">${item.genre}</div></div>
-        ${live ? `<div style="margin-left:auto;font-size:11px;font-weight:700;color:var(--live)">ЭФИР</div>` : ''}
+        ${live ? `<div class="sch-badge">В ЭФИРЕ</div>` : ''}
       </div>`;
     }).join('');
+    card.innerHTML = `<div class="sch-list">${html}</div>`;
+
+    // Scroll to live
+    setTimeout(() => {
+      const liveEl = card.querySelector('.sch-item.live');
+      if (liveEl) liveEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+  }
+
+  // ===== MODAL =====
+  function openModal(chId) {
+    S.modal = chId;
+    const ch = CHANNELS.find(c => c.id === chId);
+    const ov = ce('div', 'modal-ov');
+    ov.id = 'modalOv';
+    const dateStr = toDateStr(S.date);
+    const data = scheduleStore[`${chId}_${dateStr}`];
+    const tagClass = CAT_TAG[ch?.cat] || 'tag-tv';
+
+    let schedHTML = '';
+    if (!data || data === 'loading') {
+      schedHTML = `<div class="loading-box"><div class="spinner"></div></div>`;
+    } else if (data === 'error' || !Array.isArray(data) || data.length === 0) {
+      schedHTML = `<div style="padding:16px;color:var(--muted);font-size:13px">Нет данных расписания</div>`;
+    } else {
+      const liveIdx = getLiveIndex(data);
+      const slice = data.slice(Math.max(0, liveIdx - 2), liveIdx + 15);
+      schedHTML = slice.map((item, i) => {
+        const absIdx = Math.max(0, liveIdx - 2) + i;
+        const live = isLive(item, data, absIdx);
+        return `<div class="modal-row${live?' live':''}">
+          <div class="modal-tm">${esc(item.time)}</div>
+          <div>
+            <div class="modal-show">${esc(item.title)}</div>
+            <div class="modal-genre">${esc(item.genre||'')}${live?'  · <span style="color:var(--live);font-weight:700">В ЭФИРЕ</span>':''}</div>
+          </div>
+        </div>`;
+      }).join('');
+    }
 
     ov.innerHTML = `<div class="modal">
-      <div class="modal-header">
-        <div class="modal-title">${ch.name}</div>
-        <button class="modal-close" id="modalClose">✕</button>
+      <div class="modal-hdr">
+        <div class="modal-t">${esc(ch?.name||'')}</div>
+        <button class="modal-x" id="modalClose">✕</button>
       </div>
-      <div class="modal-channel-info">
-        <div style="width:48px;height:48px;border-radius:10px;background:${ch.color}22;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:${ch.color};flex-shrink:0">${ch.icon}</div>
+      <div class="modal-ch-info">
+        <div style="width:42px;height:42px;border-radius:8px;background:${ch?.color||'#333'}22;display:flex;align-items:center;justify-content:center;flex-shrink:0">${ch ? chLogoHTML(ch) : ''}</div>
         <div>
-          <div style="font-size:15px;font-weight:700">${ch.name}</div>
-          <div style="font-size:12px;color:var(--muted)">${ch.type === 'radio' ? 'Радиостанция' : 'Телеканал'} · ${formatDate(state.selectedDate)}</div>
+          <div style="font-size:15px;font-weight:700">${esc(ch?.name||'')}</div>
+          <div style="font-size:12px;color:var(--muted)">${ch?.type==='radio'?'Радиостанция':'Телеканал'} · ${formatDate(S.date)}</div>
         </div>
-        <button class="btn-primary" style="margin-left:auto;font-size:12px;padding:8px 14px" data-channel-detail="${ch.id}" id="modalFullBtn">Открыть →</button>
+        <button class="btn-red" style="margin-left:auto;font-size:12px;padding:8px 14px" data-detail="${chId}">Открыть →</button>
       </div>
-      <div class="modal-schedule-list">${items}</div>
+      <div class="modal-sched">${schedHTML}</div>
     </div>`;
-    return ov;
+
+    app.appendChild(ov);
+    requestAnimationFrame(() => ov.classList.add('open'));
+
+    ov.querySelector('#modalClose').addEventListener('click', closeModal);
+    ov.addEventListener('click', e => { if (e.target === ov) closeModal(); });
+    ov.querySelectorAll('[data-detail]').forEach(el => el.addEventListener('click', () => { closeModal(); goDetail(+el.dataset.detail); }));
   }
 
-  // ======= FOOTER =======
-  function renderFooter() {
-    const el = document.createElement('footer');
-    el.className = 'footer';
+  function closeModal() {
+    const ov = document.getElementById('modalOv');
+    if (ov) { ov.classList.remove('open'); setTimeout(() => ov.remove(), 250); }
+    S.modal = null;
+  }
+
+  // ===== NAVIGATION HELPERS =====
+  function goDetail(chId) {
+    S.channelId = chId;
+    S.page = 'channel';
+    window.scrollTo(0, 0);
+    render();
+  }
+
+  function goNav(page) {
+    S.page = page;
+    S.mobMenu = false;
+    window.scrollTo(0, 0);
+    render();
+  }
+
+  function doSearch(q) {
+    S.search = q;
+    S.filter = 'all';
+    S.offset = 0;
+    S.page = 'home';
+    window.scrollTo(0, 300);
+    render();
+  }
+
+  // ===== AUTOCOMPLETE =====
+  function showAc(inputEl, acEl) {
+    const q = inputEl.value.trim().toLowerCase();
+    if (q.length < 1) { acEl.classList.remove('open'); return; }
+    const matches = CHANNELS.filter(c => c.name.toLowerCase().includes(q)).slice(0, 7);
+    if (!matches.length) { acEl.classList.remove('open'); return; }
+    acEl.innerHTML = matches.map(ch => `
+      <div class="ac-item" data-detail="${ch.id}">
+        <div class="ac-logo" style="background:${ch.color}22;color:${ch.color}">${chLogoHTML(ch)}</div>
+        <div>
+          <div class="ac-n">${esc(ch.name)}</div>
+          <div class="ac-t">${ch.type==='radio'?'Радио':'ТВ'} · ${CAT_LABELS[ch.cat]||ch.cat}</div>
+        </div>
+      </div>`).join('');
+    acEl.classList.add('open');
+    acEl.querySelectorAll('[data-detail]').forEach(el => el.addEventListener('click', () => goDetail(+el.dataset.detail)));
+  }
+
+  // ===== FEATURES & FAQ =====
+  function mkFeaturesHTML() {
+    const tvN = CHANNELS.filter(c=>c.type==='tv').length;
+    const rN  = CHANNELS.filter(c=>c.type==='radio').length;
+    return `
+      <section class="features">
+        <div class="sec-hdr">
+          <div class="sec-eye">Возможности</div>
+          <div class="sec-t">ВСЁ В ОДНОМ МЕСТЕ</div>
+          <p class="sec-d">Реальные данные EPG, мгновенный поиск и удобный интерфейс</p>
+        </div>
+        <div class="feat-grid">
+          <div class="feat-card"><div class="feat-icon">📡</div><div class="feat-t">${tvN+rN}+ источников</div><p class="feat-d">Полный охват российских ТВ-каналов и радиостанций с реальным расписанием EPG.</p></div>
+          <div class="feat-card"><div class="feat-icon">🟢</div><div class="feat-t">Живые данные EPG</div><p class="feat-d">Расписание загружается из реального EPG-провайдера. Никаких демо-данных.</p></div>
+          <div class="feat-card"><div class="feat-icon">🔍</div><div class="feat-t">Умный поиск</div><p class="feat-d">Ищите каналы по названию с мгновенным автодополнением.</p></div>
+          <div class="feat-card"><div class="feat-icon">📅</div><div class="feat-t">7 дней вперёд</div><p class="feat-d">Смотрите расписание на неделю вперёд и 3 дня назад.</p></div>
+          <div class="feat-card"><div class="feat-icon">🔧</div><div class="feat-t">Виджет для сайта</div><p class="feat-d">Встройте программу передач на любой сайт одной строкой кода.</p></div>
+          <div class="feat-card"><div class="feat-icon">📱</div><div class="feat-t">Адаптивный дизайн</div><p class="feat-d">Удобно на любом устройстве — ПК, планшет, смартфон.</p></div>
+        </div>
+      </section>`;
+  }
+
+  function mkFaqHTML() {
+    const items = [
+      ['Откуда берутся данные расписания?', 'Расписание загружается в реальном времени из epg.pw — бесплатного публичного EPG-провайдера с поддержкой тысяч каналов по всему миру.'],
+      ['Как найти расписание канала?', 'Введите название в строку поиска. Автодополнение предложит совпадения. Нажмите на канал для просмотра полного расписания.'],
+      ['Почему не загружается расписание?', 'Данные загружаются через публичный CORS-прокси. В редких случаях возможны временные сбои — обновите страницу или попробуйте через несколько минут.'],
+      ['Есть ли радиостанции?', `Да! В базе ${CHANNELS.filter(c=>c.type==='radio').length} радиостанций с расписанием передач.`],
+      ['Как встроить на свой сайт?', 'Перейдите в раздел «Виджет» — там готовый код для вставки на любой сайт.'],
+    ];
+    return `
+      <section class="faq-s">
+        <div class="sec-hdr">
+          <div class="sec-eye">FAQ</div>
+          <div class="sec-t">ЧАСТЫЕ ВОПРОСЫ</div>
+        </div>
+        <div class="faq-list">
+          ${items.map(([q,a]) => `
+            <div class="faq-item">
+              <div class="faq-q">${q} <span class="ch">▾</span></div>
+              <div class="faq-a">${a}</div>
+            </div>`).join('')}
+        </div>
+      </section>`;
+  }
+
+  // ===== STATIC PAGES =====
+  function mkStatic(title, html) {
+    const page = ce('div', 'page');
+    page.innerHTML = `
+      <div class="static-hdr">
+        <div class="static-hdr-inner">
+          <div style="margin-bottom:8px"><a href="#" data-nav="home" style="color:var(--muted);font-size:13px">← На главную</a></div>
+          <h1 style="font-family:var(--font-d);font-size:34px;letter-spacing:2px">${title}</h1>
+        </div>
+      </div>
+      <div class="static-body">${html}</div>`;
+    return page;
+  }
+
+  function aboutHTML() {
+    return `
+      <p>TV-CHECKPROGRAMM — современный агрегатор телепрограммы с реальными данными EPG. Мы показываем расписание ${CHANNELS.filter(c=>c.type==='tv').length}+ телеканалов и ${CHANNELS.filter(c=>c.type==='radio').length}+ радиостанций.</p>
+      <h3>Источник данных</h3>
+      <p>Расписание загружается из <strong>epg.pw</strong> — крупнейшей бесплатной базы EPG-данных с поддержкой тысяч каналов по всему миру. Данные обновляются ежедневно.</p>
+      <h3>Что умеет сервис</h3>
+      <ul>
+        <li>Реальное расписание всех федеральных и тематических ТВ-каналов</li>
+        <li>Расписание радиостанций</li>
+        <li>Индикатор текущего эфира в реальном времени</li>
+        <li>Поиск по названию канала</li>
+        <li>Расписание на 7 дней вперёд</li>
+        <li>Виджет для встраивания на сторонние сайты</li>
+        <li>Адаптивный дизайн для всех устройств</li>
+      </ul>`;
+  }
+
+  function docsHTML() {
+    return `
+      <h3>Как пользоваться</h3>
+      <p><strong>1. Поиск канала</strong> — введите название в строку поиска. Автодополнение покажет совпадения.</p>
+      <p><strong>2. Выбор даты</strong> — используйте ленту дат. Доступны данные за 3 прошедших и 7 следующих дней.</p>
+      <p><strong>3. Фильтрация</strong> — фильтруйте по типу (ТВ/Радио) или тематике.</p>
+      <p><strong>4. Полное расписание</strong> — нажмите «Полное расписание →» на карточке для детального просмотра.</p>
+      <h3>Виджет</h3>
+      <p>Перейдите в раздел <a href="#" data-nav="widget" style="color:var(--accent2)">Виджет</a> — готовый iframe и скрипт для встраивания на любой сайт.</p>
+      <h3>Источник данных EPG</h3>
+      <p>Данные: <strong>epg.pw</strong>. Прокси: <strong>api.allorigins.win</strong>. Все данные бесплатны и общедоступны.</p>`;
+  }
+
+  function faqHTML() {
+    const items = [
+      ['Откуда берётся расписание?', 'Из epg.pw — бесплатного публичного провайдера EPG-данных.'],
+      ['Почему не загружается расписание?', 'Возможны временные сбои CORS-прокси. Обновите страницу через 1-2 минуты.'],
+      ['Могу ли я встроить расписание на свой сайт?', 'Да! В разделе «Виджет» есть готовый код для встраивания.'],
+      ['Есть ли API?', 'Публичный API не предоставляется. Вы можете использовать epg.pw API напрямую.'],
+      ['Как добавить отсутствующий канал?', 'Напишите нам через форму контактов.'],
+    ];
+    return `<div class="faq-list" style="max-width:100%">${items.map(([q,a]) => `
+      <div class="faq-item">
+        <div class="faq-q">${q} <span class="ch">▾</span></div>
+        <div class="faq-a">${a}</div>
+      </div>`).join('')}</div>`;
+  }
+
+  function policyHTML() {
+    return `
+      <p style="color:var(--muted);font-size:13px">Обновлено: 1 января 2025</p>
+      <h3>1. Собираемые данные</h3>
+      <p>Сервис не собирает персональные данные. Анонимная статистика использования не передаётся третьим лицам.</p>
+      <h3>2. Cookies</h3>
+      <p>Используются только технические cookies для сохранения выбранных фильтров и даты. Данные хранятся локально в браузере.</p>
+      <h3>3. Сторонние сервисы</h3>
+      <p>Расписание загружается с epg.pw и через api.allorigins.win (CORS-прокси). К этим сервисам применяются их собственные политики конфиденциальности.</p>
+      <h3>4. Контакты</h3>
+      <p>По вопросам: <a href="mailto:privacy@tv-checkprogramm.ru" style="color:var(--accent2)">privacy@tv-checkprogramm.ru</a></p>`;
+  }
+
+  function contactsHTML() {
+    return `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:28px">
+        ${[['📧','Email','contact@tv-checkprogramm.ru'],['💬','Telegram','@tvcheckprogramm'],['📍','Адрес','Москва, Россия']].map(([ico,l,v]) =>
+          `<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;text-align:center">
+            <div style="font-size:28px;margin-bottom:7px">${ico}</div>
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:4px">${l}</div>
+            <div style="font-size:14px;font-weight:600">${v}</div>
+          </div>`).join('')}
+      </div>
+      <h3>Написать нам</h3>
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:22px;display:grid;gap:10px">
+        <input placeholder="Ваше имя" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:11px 14px;color:var(--text);font-family:var(--font-b);font-size:14px;outline:none;width:100%">
+        <input type="email" placeholder="Email" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:11px 14px;color:var(--text);font-family:var(--font-b);font-size:14px;outline:none;width:100%">
+        <textarea rows="4" placeholder="Сообщение..." style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:11px 14px;color:var(--text);font-family:var(--font-b);font-size:14px;outline:none;width:100%;resize:vertical"></textarea>
+        <button class="btn-red" id="sendBtn" style="width:fit-content">Отправить →</button>
+      </div>`;
+  }
+
+  function widgetHTML() {
+    const exampleChId = 1;
+    const iframeCode = `<iframe
+  src="https://tv-checkprogramm.ru/widget.html?channel=1&theme=dark"
+  width="400" height="600"
+  style="border:none;border-radius:12px"
+  title="TV-CHECKPROGRAMM Widget">
+</iframe>`;
+    const scriptCode = `<!-- TV-CHECKPROGRAMM Widget -->
+<div id="tvcheck-widget" data-channel="1" data-theme="dark"></div>
+<script src="https://tv-checkprogramm.ru/widget/embed.js"><\/script>`;
+
+    return `
+      <p>Встройте расписание любого канала на свой сайт. Виджет адаптивен, поддерживает тёмную и светлую тему, и автоматически показывает текущий эфир.</p>
+      <h3>Способ 1: iframe</h3>
+      <p>Замените <code style="background:var(--bg3);padding:2px 6px;border-radius:4px">channel=1</code> на нужный ID канала (см. таблицу ниже).</p>
+      <div class="code-block">
+        <button class="code-copy" onclick="navigator.clipboard.writeText(this.parentNode.querySelector('pre').textContent);this.textContent='Скопировано!'">Копировать</button>
+        <pre id="iframeCode">${esc(iframeCode)}</pre>
+      </div>
+      <h3 style="margin-top:24px">Способ 2: JavaScript embed</h3>
+      <div class="code-block">
+        <button class="code-copy" onclick="navigator.clipboard.writeText(this.parentNode.querySelector('pre').textContent);this.textContent='Скопировано!'">Копировать</button>
+        <pre>${esc(scriptCode)}</pre>
+      </div>
+      <h3 style="margin-top:24px">Параметры виджета</h3>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="border-bottom:1px solid var(--border)">
+            <th style="padding:10px;text-align:left;color:var(--muted)">Параметр</th>
+            <th style="padding:10px;text-align:left;color:var(--muted)">Значения</th>
+            <th style="padding:10px;text-align:left;color:var(--muted)">Описание</th>
+          </tr></thead>
+          <tbody>
+            ${[
+              ['channel','1, 2, 3...','ID канала из таблицы ниже'],
+              ['theme','dark / light','Цветовая тема'],
+              ['limit','5-20','Количество передач (по умолч. 8)'],
+              ['lang','ru / en','Язык интерфейса'],
+            ].map(([p,v,d]) => `<tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:10px;font-weight:700;color:var(--accent2)">${p}</td>
+              <td style="padding:10px;color:var(--text)">${v}</td>
+              <td style="padding:10px;color:var(--muted)">${d}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <h3 style="margin-top:24px">ID каналов</h3>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="border-bottom:1px solid var(--border)">
+            <th style="padding:8px;text-align:left;color:var(--muted)">ID</th>
+            <th style="padding:8px;text-align:left;color:var(--muted)">Канал</th>
+            <th style="padding:8px;text-align:left;color:var(--muted)">Тип</th>
+          </tr></thead>
+          <tbody>
+            ${CHANNELS.map(ch => `<tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:7px 8px;font-family:monospace;color:var(--accent2)">${ch.id}</td>
+              <td style="padding:7px 8px;font-weight:600">${esc(ch.name)}</td>
+              <td style="padding:7px 8px;color:var(--muted)">${ch.type==='radio'?'Радио':'ТВ'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  // ===== FOOTER =====
+  function mkFooter() {
+    const el = ce('footer', 'footer');
     el.innerHTML = `
       <div class="footer-inner">
         <div class="footer-grid">
           <div class="footer-brand">
-            <div class="logo" style="margin-bottom:14px">
-              <div class="logo-icon">📺</div>
-              <span class="logo-text">TV-<span>CHECK</span></span>
-            </div>
-            <p>Полное расписание всех телеканалов и радиостанций России. Бесплатно и без регистрации.</p>
+            <div class="logo"><div class="logo-box">📺</div><span class="logo-txt">TV-<span>CHECK</span></span></div>
+            <p>Реальное расписание ${CHANNELS.filter(c=>c.type==='tv').length}+ ТВ-каналов и ${CHANNELS.filter(c=>c.type==='radio').length}+ радиостанций России. Данные EPG обновляются ежедневно.</p>
           </div>
           <div>
-            <div class="footer-col-title">Телеканалы</div>
-            <ul class="footer-links">
+            <div class="ft">Телеканалы</div>
+            <ul class="fl">
               <li><a href="#" data-filter="federal">Федеральные</a></li>
               <li><a href="#" data-filter="news">Новостные</a></li>
               <li><a href="#" data-filter="sport">Спортивные</a></li>
               <li><a href="#" data-filter="kids">Детские</a></li>
               <li><a href="#" data-filter="movies">Кино</a></li>
-              <li><a href="#" data-filter="music">Музыкальные</a></li>
+              <li><a href="#" data-filter="doc">Документальные</a></li>
             </ul>
           </div>
           <div>
-            <div class="footer-col-title">Радио</div>
-            <ul class="footer-links">
+            <div class="ft">Радио</div>
+            <ul class="fl">
               <li><a href="#" data-filter="radio">Все станции</a></li>
-              <li><a href="#" data-cat="radio-music">Музыкальное</a></li>
-              <li><a href="#" data-cat="radio-news">Новостное</a></li>
-              <li><a href="#" data-cat="radio-talk">Разговорное</a></li>
-              <li><a href="#" data-cat="radio-sport">Спортивное</a></li>
+              <li><a href="#" data-filter="cat:radio-music">Музыкальное</a></li>
+              <li><a href="#" data-filter="cat:radio-news">Новостное</a></li>
+              <li><a href="#" data-filter="cat:radio-talk">Разговорное</a></li>
             </ul>
           </div>
           <div>
-            <div class="footer-col-title">Сервис</div>
-            <ul class="footer-links">
+            <div class="ft">Сервис</div>
+            <ul class="fl">
               <li><a href="#" data-nav="about">О нас</a></li>
+              <li><a href="#" data-nav="widget">Виджет</a></li>
               <li><a href="#" data-nav="docs">Документация</a></li>
               <li><a href="#" data-nav="faq">FAQ</a></li>
-              <li><a href="#" data-nav="policy">Политика конфиденциальности</a></li>
+              <li><a href="#" data-nav="policy">Конфиденциальность</a></li>
               <li><a href="#" data-nav="contacts">Контакты</a></li>
             </ul>
           </div>
         </div>
         <div class="footer-bottom">
-          <p>© 2025 TV-CHECKPROGRAMM. Все права защищены.</p>
-          <div style="display:flex;gap:16px">
+          <p>© 2025 TV-CHECKPROGRAMM. Данные EPG: <a href="https://epg.pw" target="_blank" rel="noopener">epg.pw</a></p>
+          <div class="footer-links-bot">
             <a href="#" data-nav="policy">Конфиденциальность</a>
-            <a href="#" data-nav="docs">Документация</a>
             <a href="#" data-nav="contacts">Контакты</a>
+            <a href="#" data-nav="widget">Виджет</a>
           </div>
         </div>
-      </div>
-    `;
+      </div>`;
     return el;
   }
 
-  // ======= HELPERS =======
-  function formatDate(d) {
-    const days = ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
-    const months = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
-    return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]}`;
-  }
-
-  function showToast(msg) {
-    let t = document.querySelector('.toast');
-    if (!t) { t = document.createElement('div'); t.className = 'toast'; document.body.appendChild(t); }
-    t.textContent = msg;
-    t.classList.add('show');
-    setTimeout(() => t.classList.remove('show'), 3000);
-  }
-
-  function updateClock() {
-    const el = document.getElementById('liveClock');
-    if (el) el.textContent = getCurrentTimeStr();
-  }
-
-  function handleSearch(q) {
-    state.search = q;
-    state.filter = 'all';
-    state.channelPage = 0;
-    state.page = 'home';
-    render();
-  }
-
-  function showAutocomplete(inputEl, acEl) {
-    const q = inputEl.value.trim().toLowerCase();
-    if (q.length < 1) { acEl.classList.remove('open'); return; }
-    const matches = CHANNELS.filter(c => c.name.toLowerCase().includes(q)).slice(0, 6);
-    if (!matches.length) { acEl.classList.remove('open'); return; }
-    acEl.innerHTML = matches.map(ch => `
-      <div class="autocomplete-item" data-channel-detail="${ch.id}">
-        <div class="autocomplete-logo" style="background:${ch.color}22;color:${ch.color}">${ch.icon}</div>
-        <div>
-          <div class="autocomplete-name">${ch.name}</div>
-          <div class="autocomplete-type">${ch.type === 'radio' ? 'Радио' : 'ТВ'} · ${window.AppData.CATEGORY_LABELS[ch.category]||ch.category}</div>
-        </div>
-      </div>
-    `).join('');
-    acEl.classList.add('open');
-  }
-
-  // ======= BIND EVENTS =======
-  function bindEvents() {
-    // Navigation
+  // ===== BIND EVENTS =====
+  function bindAll() {
+    // Nav links
     document.querySelectorAll('[data-nav]').forEach(el => {
-      el.addEventListener('click', e => {
-        e.preventDefault();
-        state.page = el.dataset.nav;
-        state.mobileMenuOpen = false;
+      el.addEventListener('click', e => { e.preventDefault(); goNav(el.dataset.nav); });
+    });
+
+    // Filter chips
+    document.querySelectorAll('[data-c]').forEach(el => {
+      el.addEventListener('click', () => {
+        S.filter = el.dataset.c;
+        S.search = '';
+        S.offset = 0;
+        S.page = 'home';
         window.scrollTo(0, 0);
         render();
       });
     });
 
-    // Filter chips
+    // Sidebar filter buttons
     document.querySelectorAll('[data-filter]').forEach(el => {
       el.addEventListener('click', e => {
         e.preventDefault();
         const f = el.dataset.filter;
-        state.filter = f;
-        state.search = '';
-        state.channelPage = 0;
-        state.page = 'home';
+        if (f.startsWith('cat:')) {
+          S.filter = f;
+        } else {
+          S.filter = f;
+        }
+        S.search = '';
+        S.offset = 0;
+        S.page = 'home';
         window.scrollTo(0, 0);
         render();
-      });
-    });
-
-    // Category sidebar
-    document.querySelectorAll('[data-cat]').forEach(el => {
-      el.addEventListener('click', e => {
-        e.preventDefault();
-        // filter by category
-        const cat = el.dataset.cat;
-        const cats = CHANNELS.filter(c => c.category === cat);
-        if (!cats.length) return;
-        // Show only those channels
-        state.filter = 'all';
-        state.search = '';
-        state.channelPage = 0;
-        state.page = 'home';
-        // Temporarily override
-        state._catFilter = cat;
-        window.scrollTo(0, 300);
-        renderCatFilter(cat);
       });
     });
 
     // Date buttons
     document.querySelectorAll('[data-date]').forEach(el => {
       el.addEventListener('click', () => {
-        state.selectedDate = new Date(el.dataset.date);
-        state.page = state.page === 'channel' ? 'channel' : 'home';
+        S.date = new Date(el.dataset.date);
+        S.offset = 0;
         render();
       });
+    });
+
+    // Channel modal (header click)
+    document.querySelectorAll('[data-modal]').forEach(el => {
+      el.addEventListener('click', () => openModal(+el.dataset.modal));
+    });
+
+    // Channel detail
+    document.querySelectorAll('[data-detail]').forEach(el => {
+      el.addEventListener('click', () => goDetail(+el.dataset.detail));
     });
 
     // Load more
     const loadMoreBtn = document.getElementById('loadMoreBtn');
-    if (loadMoreBtn) {
-      loadMoreBtn.addEventListener('click', () => {
-        state.channelPage++;
-        render();
-      });
-    }
-
-    // Channel detail open
-    document.querySelectorAll('[data-channel-detail]').forEach(el => {
-      el.addEventListener('click', e => {
-        e.preventDefault();
-        state.selectedChannel = el.dataset.channelDetail;
-        state.page = 'channel';
-        window.scrollTo(0, 0);
-        render();
-      });
-    });
-
-    // Channel modal open (click on header)
-    document.querySelectorAll('[data-channel-open]').forEach(el => {
-      el.addEventListener('click', () => {
-        const ch = CHANNELS.find(c => c.id === el.dataset.channelOpen);
-        if (!ch) return;
-        state.modalChannel = ch;
-        state.modalOpen = true;
-        render();
-      });
-    });
+    if (loadMoreBtn) loadMoreBtn.addEventListener('click', () => { S.offset++; render(); });
 
     // FAQ toggle
-    document.querySelectorAll('.faq-question').forEach(el => {
-      el.addEventListener('click', () => {
-        el.closest('.faq-item').classList.toggle('open');
-      });
+    document.querySelectorAll('.faq-q').forEach(el => {
+      el.addEventListener('click', () => el.closest('.faq-item').classList.toggle('open'));
     });
-
-    // Modal close
-    const modalOverlay = document.getElementById('modalOverlay');
-    if (modalOverlay) {
-      document.getElementById('modalClose')?.addEventListener('click', () => {
-        state.modalOpen = false;
-        render();
-      });
-      modalOverlay.addEventListener('click', e => {
-        if (e.target === modalOverlay) { state.modalOpen = false; render(); }
-      });
-    }
 
     // Hero search
     const heroSearch = document.getElementById('heroSearch');
-    const heroAc = document.getElementById('heroAutocomplete');
-    const heroBtn = document.getElementById('heroSearchBtn');
+    const heroAc = document.getElementById('heroAc');
+    const heroBtn = document.getElementById('heroBtn');
     if (heroSearch) {
-      heroSearch.addEventListener('input', () => showAutocomplete(heroSearch, heroAc));
-      heroSearch.addEventListener('keydown', e => { if (e.key === 'Enter') handleSearch(heroSearch.value); });
+      heroSearch.addEventListener('input', () => showAc(heroSearch, heroAc));
+      heroSearch.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(heroSearch.value); });
     }
-    if (heroBtn) heroBtn.addEventListener('click', () => handleSearch(heroSearch?.value || ''));
-    if (heroAc) {
-      heroAc.addEventListener('click', e => {
-        const item = e.target.closest('[data-channel-detail]');
-        if (item) { state.selectedChannel = item.dataset.channelDetail; state.page = 'channel'; state.modalOpen = false; window.scrollTo(0,0); render(); }
-      });
-    }
+    if (heroBtn) heroBtn.addEventListener('click', () => doSearch(heroSearch?.value || ''));
 
     // Header search
-    const headerSearch = document.getElementById('headerSearch');
-    const headerAc = document.getElementById('headerAutocomplete');
-    if (headerSearch) {
-      headerSearch.addEventListener('input', () => showAutocomplete(headerSearch, headerAc));
-      headerSearch.addEventListener('keydown', e => { if (e.key === 'Enter') handleSearch(headerSearch.value); });
-    }
-    if (headerAc) {
-      headerAc.addEventListener('click', e => {
-        const item = e.target.closest('[data-channel-detail]');
-        if (item) { state.selectedChannel = item.dataset.channelDetail; state.page = 'channel'; state.modalOpen = false; window.scrollTo(0,0); render(); }
-      });
+    const hdrSearch = document.getElementById('hdrSearch');
+    const hdrAc = document.getElementById('hdrAc');
+    if (hdrSearch) {
+      hdrSearch.addEventListener('input', () => showAc(hdrSearch, hdrAc));
+      hdrSearch.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(hdrSearch.value); });
     }
 
-    // Mobile
+    // Burger
     const burger = document.getElementById('burgerBtn');
-    if (burger) burger.addEventListener('click', () => { state.mobileMenuOpen = !state.mobileMenuOpen; render(); });
+    if (burger) burger.addEventListener('click', () => { S.mobMenu = !S.mobMenu; render(); });
 
-    const mobileSearch = document.getElementById('mobileSearch');
-    const mobileSearchBtn = document.getElementById('mobileSearchBtn');
-    if (mobileSearchBtn) mobileSearchBtn.addEventListener('click', () => handleSearch(mobileSearch?.value || ''));
+    // Mobile search
+    const mobSearch = document.getElementById('mobSearch');
+    const mobSearchBtn = document.getElementById('mobSearchBtn');
+    if (mobSearchBtn) mobSearchBtn.addEventListener('click', () => doSearch(mobSearch?.value || ''));
 
-    // Contact form
-    const sendContactBtn = document.getElementById('sendContactBtn');
-    if (sendContactBtn) sendContactBtn.addEventListener('click', () => showToast('✅ Сообщение отправлено! Мы ответим в течение 24 часов.'));
+    // Contact send
+    const sendBtn = document.getElementById('sendBtn');
+    if (sendBtn) sendBtn.addEventListener('click', () => toast('✅ Сообщение отправлено! Мы ответим в течение 24 часов.'));
 
-    const copyWidgetCodeBtn = document.getElementById('copyWidgetCodeBtn');
-    const widgetEmbedCode = document.getElementById('widgetEmbedCode');
-    if (copyWidgetCodeBtn && widgetEmbedCode) {
-      copyWidgetCodeBtn.addEventListener('click', async () => {
-        try {
-          await navigator.clipboard.writeText(widgetEmbedCode.value);
-          showToast('✅ Код виджета скопирован');
-        } catch (_) {
-          widgetEmbedCode.select();
-          document.execCommand('copy');
-          showToast('✅ Код виджета скопирован');
-        }
-      });
-    }
-
-    // Time filters
-    document.querySelectorAll('[data-time]').forEach(el => {
-      el.addEventListener('click', () => {
-        document.querySelectorAll('[data-time]').forEach(b => b.classList.remove('active'));
-        el.classList.add('active');
-      });
-    });
-
-    // Close autocomplete on outside click
+    // Close autocomplete
     document.addEventListener('click', e => {
-      if (!e.target.closest('.header-search') && !e.target.closest('.hero-search')) {
-        document.querySelectorAll('.autocomplete').forEach(ac => ac.classList.remove('open'));
+      if (!e.target.closest('.hdr-search') && !e.target.closest('.hero-form')) {
+        document.querySelectorAll('.ac').forEach(ac => ac.classList.remove('open'));
       }
-    }, { once: true });
+    }, { capture: false });
   }
 
-  function renderCatFilter(cat) {
-    // Scroll to schedule and filter inline without full re-render
-    // Just re-render with category filter via search hack
-    const matching = CHANNELS.filter(c => c.category === cat);
-    if (matching.length === 1) {
-      state.selectedChannel = matching[0].id;
-      state.page = 'channel';
-      window.scrollTo(0, 0);
-      render();
-    } else {
-      state.filter = 'all';
-      state.search = '';
-      // We'll apply category-level filter
-      state._catFilter = cat;
-      render();
-      state._catFilter = null;
-    }
+  // ===== UTILS =====
+  function ce(tag, cls) {
+    const el = document.createElement(tag);
+    if (cls) el.className = cls;
+    return el;
   }
 
-  // ======= CLOCK INTERVAL =======
+  function esc(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function formatDate(d) {
+    const DAYS = ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
+    const MONS = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+    return `${DAYS[d.getDay()]}, ${d.getDate()} ${MONS[d.getMonth()]}`;
+  }
+
+  function toast(msg) {
+    let t = document.querySelector('.toast');
+    if (!t) { t = document.createElement('div'); t.className = 'toast'; document.body.appendChild(t); }
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3200);
+  }
+
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  // ===== CLOCK UPDATE =====
   setInterval(() => {
-    const el = document.getElementById('liveClock');
-    if (el) el.textContent = getCurrentTimeStr();
-    // Update progress bars
-    document.querySelectorAll('.now-progress-bar').forEach(bar => {
-      // They'll be updated on next render cycle
+    // Refresh progress bars every 30s without full re-render
+    document.querySelectorAll('.prog-fill').forEach(el => {
+      // Progress bars are static until next render; full refresh every 5 min
     });
   }, 30000);
 
-  // ======= INITIAL RENDER =======
+  // Auto-refresh every 5 minutes
+  setInterval(() => {
+    if (S.page === 'home') {
+      loadVisibleSchedules();
+    }
+  }, 5 * 60 * 1000);
+
+  // ===== BOOT =====
   render();
 });

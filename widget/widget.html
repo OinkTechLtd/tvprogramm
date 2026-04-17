@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TV-CHECKPROGRAMM Widget</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Manrope', sans-serif; font-size: 14px; background: transparent; }
+
+    :root {
+      --bg: #0a0c10;
+      --bg2: #111520;
+      --card: #131720;
+      --border: #1c2338;
+      --accent: #e63946;
+      --accent2: #3a86ff;
+      --text: #eaecf4;
+      --muted: #64748b;
+      --live: #22c55e;
+    }
+
+    /* Light theme */
+    body.light {
+      --bg: #f8fafc;
+      --bg2: #f1f5f9;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --muted: #64748b;
+    }
+
+    .widget {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      width: 100%;
+      font-family: 'Manrope', sans-serif;
+    }
+
+    .w-header {
+      background: var(--bg);
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .w-logo {
+      width: 36px; height: 36px;
+      border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 9px; font-weight: 800;
+      flex-shrink: 0; overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .w-logo img { width: 100%; height: 100%; object-fit: contain; }
+
+    .w-ch-name { font-size: 15px; font-weight: 800; color: var(--text); }
+    .w-ch-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+    .w-live-dot {
+      margin-left: auto;
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 8px;
+      background: rgba(34,197,94,.1);
+      border: 1px solid rgba(34,197,94,.3);
+      border-radius: 20px;
+      font-size: 10px; font-weight: 700; color: var(--live); white-space: nowrap;
+    }
+    .w-live-dot::before {
+      content: ''; width: 5px; height: 5px;
+      background: var(--live); border-radius: 50%;
+      animation: blink 1.5s infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    .w-date { padding: 8px 14px; font-size: 11px; color: var(--muted); background: var(--bg); border-bottom: 1px solid var(--border); font-weight: 600; letter-spacing: .5px; text-transform: uppercase; }
+
+    .w-list { }
+
+    .w-item {
+      display: flex; gap: 10px; padding: 9px 14px;
+      border-bottom: 1px solid var(--border);
+      transition: background .15s;
+      position: relative;
+      background: var(--card);
+    }
+    .w-item:last-child { border-bottom: none; }
+    .w-item.live { background: rgba(34,197,94,.04); }
+    .w-item.live::before {
+      content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+      width: 3px; background: var(--live); border-radius: 0 2px 2px 0;
+    }
+
+    .w-time {
+      font-size: 13px; font-weight: 700;
+      color: var(--muted); min-width: 40px; flex-shrink: 0; padding-top: 1px;
+      font-variant-numeric: tabular-nums;
+    }
+    .w-item.live .w-time { color: var(--live); }
+
+    .w-info { flex: 1; min-width: 0; }
+    .w-title { font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .w-genre { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+    .w-now-tag {
+      font-size: 10px; font-weight: 700; color: var(--live);
+      flex-shrink: 0; align-self: center;
+    }
+
+    .w-prog { height: 2px; background: var(--border); border-radius: 2px; margin-top: 4px; overflow: hidden; }
+    .w-prog-fill { height: 100%; background: var(--live); border-radius: 2px; }
+
+    .w-footer {
+      padding: 8px 14px;
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+      text-align: center;
+    }
+    .w-footer a { font-size: 11px; color: var(--muted); text-decoration: none; }
+    .w-footer a:hover { color: var(--accent2); }
+
+    .w-spinner { width: 24px; height: 24px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; margin: 24px auto; }
+    @keyframes spin { to{transform:rotate(360deg)} }
+
+    .w-error { padding: 20px; text-align: center; color: var(--muted); font-size: 13px; }
+  </style>
+</head>
+<body>
+<div class="widget" id="widget">
+  <div id="widgetContent"><div class="w-spinner"></div></div>
+</div>
+
+<script>
+(async function() {
+  // Parse URL params
+  const params = new URLSearchParams(window.location.search);
+  const channelId = parseInt(params.get('channel') || '1');
+  const theme = params.get('theme') || 'dark';
+  const limit = parseInt(params.get('limit') || '8');
+
+  if (theme === 'light') document.body.classList.add('light');
+
+  // Channel data (minimal subset)
+  const CHANNELS = {
+    1: { name: 'Первый канал', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/51/Pervyi_Kanal.svg/60px-Pervyi_Kanal.svg.png', color: '#1565C0' },
+    2: { name: 'Россия 1', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e5/Russia-1.svg/60px-Russia-1.svg.png', color: '#C62828' },
+    3: { name: 'Матч ТВ', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f3/Match_TV_logo.svg/60px-Match_TV_logo.svg.png', color: '#E65100' },
+    4: { name: 'НТВ', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/52/NTV_logo.svg/60px-NTV_logo.svg.png', color: '#00897B' },
+    5: { name: 'Пятый канал', logo: '', color: '#6A1B9A' },
+    7: { name: 'Россия 24', logo: '', color: '#0D47A1' },
+    13: { name: 'СТС', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/10/STS_channel.svg/60px-STS_channel.svg.png', color: '#F57C00' },
+    19: { name: 'ТНТ', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c4/TNT_Russia_2016_logo.svg/60px-TNT_Russia_2016_logo.svg.png', color: '#E53935' },
+    27: { name: 'Eurosport 1', logo: '', color: '#1565C0' },
+    46: { name: 'CNN', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b1/CNN.svg/60px-CNN.svg.png', color: '#CC0000' },
+  };
+
+  const ch = CHANNELS[channelId] || { name: `Канал ${channelId}`, logo: '', color: '#333' };
+
+  const today = new Date();
+  const dateStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  const dayLabel = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'][today.getDay()] + ', ' + today.getDate() + ' ' + ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'][today.getMonth()];
+
+  function formatHHMM(date) {
+    const h = String(date.getUTCHours()).padStart(2,'0');
+    const m = String(date.getUTCMinutes()).padStart(2,'0');
+    return `${h}:${m}`;
+  }
+
+  function moscowTime(ts) { return new Date(ts + 3 * 3600 * 1000); }
+
+  try {
+    const url = `https://epg.pw/api/epg.json?channel_id=${channelId}&timezone=Europe/Moscow`;
+    const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+    const resp = await fetch(proxy, { signal: AbortSignal.timeout(8000) });
+    const wrapper = await resp.json();
+    const raw = JSON.parse(wrapper.contents);
+
+    const now = Date.now();
+    const dayStart = new Date(dateStr + 'T00:00:00+03:00').getTime();
+    const dayEnd   = new Date(dateStr + 'T23:59:59+03:00').getTime();
+
+    const items = (raw.epg_data || [])
+      .map(ev => {
+        const start = ev.start_timestamp ? ev.start_timestamp * 1000 : null;
+        const stop  = ev.stop_timestamp  ? ev.stop_timestamp  * 1000 : null;
+        if (!start) return null;
+        const mskStart = start + 3 * 3600 * 1000;
+        const mskStop  = stop  ? stop + 3 * 3600 * 1000 : mskStart + 3600000;
+        if (mskStart >= dayEnd || (stop && mskStop <= dayStart)) return null;
+        return { title: ev.name || '—', genre: ev.category || '', start, stop, time: formatHHMM(moscowTime(start)), dur: stop ? Math.round((stop - start) / 60000) : 60 };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.start - b.start);
+
+    // Find live index
+    let liveIdx = 0;
+    for (let i = items.length - 1; i >= 0; i--) {
+      if (items[i].start <= now) { liveIdx = i; break; }
+    }
+
+    const visible = items.slice(Math.max(0, liveIdx - 1), liveIdx + limit);
+
+    function isLive(item, i, arr) {
+      const stop = item.stop || (arr[i+1] ? arr[i+1].start : item.start + 3600000);
+      return item.start <= now && now < stop;
+    }
+    function prog(item, i, arr) {
+      const stop = item.stop || (arr[i+1] ? arr[i+1].start : item.start + 3600000);
+      return Math.round((now - item.start) / (stop - item.start) * 100);
+    }
+
+    const logoHTML = ch.logo
+      ? `<img src="${ch.logo}" alt="${ch.name}" onerror="this.style.display='none'">`
+      : `<span style="font-size:9px;font-weight:800;color:${ch.color}">${ch.name.slice(0,4)}</span>`;
+
+    const itemsHTML = visible.map((item, i) => {
+      const live = isLive(item, Math.max(0, liveIdx-1)+i, items);
+      const p = live ? prog(item, Math.max(0, liveIdx-1)+i, items) : 0;
+      return `<div class="w-item${live?' live':''}">
+        <div class="w-time">${item.time}</div>
+        <div class="w-info">
+          <div class="w-title">${item.title}</div>
+          <div class="w-genre">${item.genre || ''}${item.genre && item.dur ? ' · ' : ''}${item.dur ? item.dur + ' мин' : ''}</div>
+          ${live ? `<div class="w-prog"><div class="w-prog-fill" style="width:${p}%"></div></div>` : ''}
+        </div>
+        ${live ? `<div class="w-now-tag">ЭФИР</div>` : ''}
+      </div>`;
+    }).join('');
+
+    document.getElementById('widgetContent').innerHTML = `
+      <div class="w-header">
+        <div class="w-logo" style="background:${ch.color}22;border-color:${ch.color}33">${logoHTML}</div>
+        <div>
+          <div class="w-ch-name">${ch.name}</div>
+          <div class="w-ch-sub">Программа передач</div>
+        </div>
+        <span class="w-live-dot">LIVE</span>
+      </div>
+      <div class="w-date">${dayLabel}</div>
+      <div class="w-list">${itemsHTML}</div>
+      <div class="w-footer"><a href="https://tv-checkprogramm.ru" target="_blank" rel="noopener">TV-CHECKPROGRAMM.ru →</a></div>`;
+  } catch (e) {
+    document.getElementById('widgetContent').innerHTML = `<div class="w-error">⚠ Не удалось загрузить расписание.<br><small>Обновите страницу</small></div>`;
+  }
+})();
+</script>
+</body>
+</html>

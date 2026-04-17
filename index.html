@@ -3,12 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="TV-CHECKPROGRAMM — полное расписание всех телеканалов и радиостанций России. Программа передач на сегодня, завтра и на неделю.">
-  <meta name="keywords" content="программа передач, расписание телеканалов, ТВ программа, радио расписание, первый канал расписание">
-  <meta property="og:title" content="TV-CHECKPROGRAMM — Программа телепередач">
-  <meta property="og:description" content="Полное расписание всех телеканалов и радиостанций России онлайн.">
+  <meta name="description" content="TV-CHECKPROGRAMM — реальное расписание всех телеканалов и радиостанций России. Программа передач на сегодня, завтра и на неделю. Данные EPG обновляются ежедневно.">
+  <meta name="keywords" content="программа передач, расписание телеканалов, ТВ программа сегодня, расписание радио, первый канал программа, НТВ расписание, Россия 1 программа">
+  <meta name="robots" content="index, follow">
+  <meta property="og:title" content="TV-CHECKPROGRAMM — Программа передач всех каналов">
+  <meta property="og:description" content="Реальное расписание 75+ телеканалов и радиостанций России. Данные EPG.">
   <meta property="og:type" content="website">
-  <title>TV-CHECKPROGRAMM — Программа передач всех каналов</title>
+  <meta property="og:url" content="https://tv-checkprogramm.ru">
+  <meta name="twitter:card" content="summary">
+  <title>TV-CHECKPROGRAMM — Программа передач всех каналов и радиостанций</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📺</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,16 +20,19 @@
 </head>
 <body>
 
-  <div id="app">
-    <!-- App renders here via JS -->
-    <div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:16px">
-      <div class="spinner"></div>
-      <p style="color:var(--muted);font-size:14px">Загрузка TV-CHECKPROGRAMM...</p>
-    </div>
+<div id="app">
+  <!-- Loading splash -->
+  <div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:14px;background:var(--bg)">
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:4px;color:#eaecf4">TV-<span style="color:#e63946">CHECK</span>PROGRAMM</div>
+    <div class="spinner"></div>
+    <p style="color:#64748b;font-size:13px">Загрузка данных EPG...</p>
   </div>
+</div>
 
-  <script src="js/data.js"></script>
-  <script src="js/main.js"></script>
+<!-- Scripts -->
+<script src="js/channels.js"></script>
+<script src="js/epg.js"></script>
+<script src="js/main.js"></script>
 
 </body>
 </html>
