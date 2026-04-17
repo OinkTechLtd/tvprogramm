@@ -722,7 +722,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function widgetHTML() {
     const exampleChId = 1;
     const iframeCode = `<iframe
-  src="https://tv-checkprogramm.ru/widget.html?channel=1&theme=dark"
+  src="https://tv-checkprogramm.ru/widget/widget.html?channel=1&theme=dark"
   width="400" height="600"
   style="border:none;border-radius:12px"
   title="TV-CHECKPROGRAMM Widget">
