@@ -417,6 +417,12 @@ body::before {
   align-items: start;
 }
 
+body.widget-mode .main-layout {
+  grid-template-columns: 1fr;
+  max-width: 100%;
+  padding: 12px;
+}
+
 /* ======= SIDEBAR ======= */
 .sidebar { position: sticky; top: 80px; }
 
