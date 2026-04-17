@@ -4,8 +4,8 @@
 
 'use strict';
 
-document.addEventListener('DOMContentLoaded', () => {
-  const { fetchSchedule, isLive, getProgress, getLiveIndex, getCurrentShow, toDateStr } = window.EPG;
+document.addEventListener('DOMContentLoaded', async () => {
+  const { fetchSchedule, isLive, getProgress, getLiveIndex, getCurrentShow, toDateStr, fetchChannelCatalog } = window.EPG;
   const CHANNELS = window.CHANNELS;
   const CAT_LABELS = window.CAT_LABELS;
   const CAT_TAG = window.CAT_TAG;
@@ -28,6 +28,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const app = document.getElementById('app');
 
+  await hydrateChannelCatalog();
+
   // ===== MAIN RENDER =====
   function render() {
     app.innerHTML = '';
@@ -49,6 +51,33 @@ document.addEventListener('DOMContentLoaded', () => {
     // Trigger EPG loads for visible channels
     if (S.page === 'home') loadVisibleSchedules();
     if (S.page === 'channel') loadChannelDetail();
+  }
+
+  async function hydrateChannelCatalog() {
+    const remoteChannels = await fetchChannelCatalog(10000);
+    if (!remoteChannels.length) return;
+
+    const known = new Set(CHANNELS.map(c => Number(c.id)));
+    let added = 0;
+
+    for (const ch of remoteChannels) {
+      const id = Number(ch.id);
+      if (!Number.isFinite(id) || known.has(id)) continue;
+      CHANNELS.push(ch);
+      known.add(id);
+      added++;
+    }
+
+    // Patch logos for existing channels if epg.pw has better metadata
+    for (const local of CHANNELS) {
+      if (local.logo) continue;
+      const remote = remoteChannels.find(rc => Number(rc.id) === Number(local.id));
+      if (remote?.logo) local.logo = remote.logo;
+    }
+
+    if (added > 0) {
+      console.info(`Loaded ${added} additional channels from epg.pw catalog`);
+    }
   }
 
   // ===== HEADER =====
@@ -319,7 +348,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function chLogoHTML(ch) {
     if (ch.logo) {
-      return `<img src="${ch.logo}" alt="${esc(ch.name)}" loading="lazy" onerror="this.parentNode.innerHTML='<span style=font-size:10px;font-weight:800;color:${encodeURIComponent(ch.color)}'>${esc(ch.abbr)}</span>'">`;
+      return `<img src="${ch.logo}" alt="${esc(ch.name)}" loading="lazy" onerror="this.parentNode.innerHTML='<span style=&quot;font-size:10px;font-weight:800;color:${esc(ch.color)}&quot;>${esc(ch.abbr)}</span>'">`;
     }
     return `<span style="font-size:10px;font-weight:800;color:${ch.color}">${esc(ch.abbr)}</span>`;
   }
@@ -640,7 +669,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <h3>Виджет</h3>
       <p>Перейдите в раздел <a href="#" data-nav="widget" style="color:var(--accent2)">Виджет</a> — готовый iframe и скрипт для встраивания на любой сайт.</p>
       <h3>Источник данных EPG</h3>
-      <p>Данные: <strong>epg.pw</strong>. Прокси: <strong>api.allorigins.win</strong>. Все данные бесплатны и общедоступны.</p>`;
+      <p>Данные: <strong>epg.pw</strong>. Прокси: <strong>secure-272717.vercel.app</strong>, <strong>secure-272717.tatnet.app</strong>, <strong>proxyvideo.vercel.app</strong>, <strong>secure-ridge-22999-537c838d4a8a.herokuapp.com</strong> с автоматическим fallback.</p>`;
   }
 
   function faqHTML() {
@@ -666,7 +695,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <h3>2. Cookies</h3>
       <p>Используются только технические cookies для сохранения выбранных фильтров и даты. Данные хранятся локально в браузере.</p>
       <h3>3. Сторонние сервисы</h3>
-      <p>Расписание загружается с epg.pw и через api.allorigins.win (CORS-прокси). К этим сервисам применяются их собственные политики конфиденциальности.</p>
+      <p>Расписание загружается с epg.pw и через внешние CORS-прокси с fallback. К этим сервисам применяются их собственные политики конфиденциальности.</p>
       <h3>4. Контакты</h3>
       <p>По вопросам: <a href="mailto:privacy@tv-checkprogramm.ru" style="color:var(--accent2)">privacy@tv-checkprogramm.ru</a></p>`;
   }

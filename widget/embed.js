@@ -7,8 +7,14 @@
   var ch = el.getAttribute('data-channel') || '1';
   var theme = el.getAttribute('data-theme') || 'dark';
   var limit = el.getAttribute('data-limit') || '8';
+  var customBase = el.getAttribute('data-base-url');
+  var scriptBase = '';
+  if (document.currentScript && document.currentScript.src) {
+    scriptBase = document.currentScript.src.replace(/\/widget\/embed\.js(?:\?.*)?$/, '');
+  }
+  var baseUrl = (customBase || scriptBase || window.location.origin).replace(/\/$/, '');
   var iframe = document.createElement('iframe');
-  iframe.src = 'https://tv-checkprogramm.tatnet.app/widget/widget.html?channel=' + ch + '&theme=' + theme + '&limit=' + limit;
+  iframe.src = baseUrl + '/widget/widget.html?channel=' + encodeURIComponent(ch) + '&theme=' + encodeURIComponent(theme) + '&limit=' + encodeURIComponent(limit);
   iframe.style.cssText = 'width:100%;height:520px;border:none;border-radius:12px;display:block';
   iframe.title = 'TV-CHECKPROGRAMM Widget';
   iframe.loading = 'lazy';

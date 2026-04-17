@@ -30,7 +30,11 @@ open index.html
 GET https://epg.pw/api/epg.json?channel_id=1&timezone=Europe/Moscow
 ```
 
-**CORS прокси:** [api.allorigins.win](https://api.allorigins.win) (бесплатный)
+**CORS прокси (fallback-цепочка):**
+- https://secure-272717.vercel.app/
+- https://secure-272717.tatnet.app/
+- https://proxyvideo.vercel.app/
+- https://secure-ridge-22999-537c838d4a8a.herokuapp.com/
 
 ---
 
@@ -52,7 +56,10 @@ tv-checkprogramm/
 
 ---
 
-## 📺 База каналов (75+)
+## 📺 База каналов
+
+- Встроенный быстрый каталог: 120+ популярных каналов/радиостанций
+- Автодогрузка полного каталога epg.pw (до 10 000 каналов) при старте страницы
 
 | Категория | Каналы |
 |-----------|--------|
@@ -100,11 +107,14 @@ tv-checkprogramm/
 </iframe>
 ```
 
-### Способ 2: JavaScript
+### Способ 2: JavaScript (свой домен)
 ```html
 <div id="tvcheck-widget" data-channel="1" data-theme="dark"></div>
 <script src="https://tv-checkprogramm.ru/widget/embed.js"></script>
 ```
+
+`embed.js` автоматически подставляет домен, с которого загружен скрипт.  
+Для принудительного домена можно добавить `data-base-url="https://your-domain.com"`.
 
 ### Параметры
 | Параметр | Значения | По умолчанию |
