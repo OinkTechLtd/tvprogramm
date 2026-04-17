@@ -71,7 +71,7 @@ async function fetchSchedule(channel, date) {
   const cached = fromCache(key);
   if (cached) return cached;
 
-  const url = `${EPG_BASE}?channel_id=${channel.id}&timezone=${TZ}`;
+  const url = `${EPG_BASE}?channel_id=${channel.id}&timezone=${TZ}&date=${dateStr}`;
 
   try {
     const raw = await fetchViaProxies(url, 9000);
@@ -123,7 +123,7 @@ function parseChannelCatalog(raw) {
         name,
         type: isRadio ? 'radio' : 'tv',
         cat: isRadio ? 'radio-music' : 'entertainment',
-        logo: String(item.logo ?? item.icon ?? item.image ?? item.avatar ?? ''),
+        logo: normalizeLogoUrl(item.logo ?? item.icon ?? item.icon_big ?? item.image ?? item.avatar),
         color: '#' + ((id * 2654435761 >>> 0).toString(16).slice(-6)).padStart(6, '0'),
         abbr: makeAbbr(name),
       };
@@ -135,6 +135,15 @@ function makeAbbr(name) {
   const words = name.split(/\s+/).filter(Boolean);
   if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
   return name.slice(0, 3).toUpperCase();
+}
+
+function normalizeLogoUrl(value) {
+  if (!value) return '';
+  let url = String(value).trim();
+  if (!url) return '';
+  if (url.startsWith('//')) url = `https:${url}`;
+  if (url.startsWith('http://')) url = `https://${url.slice(7)}`;
+  return url;
 }
 
 async function fetchViaProxies(url, timeoutMs = 8000) {

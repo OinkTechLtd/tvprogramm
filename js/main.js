@@ -68,9 +68,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       added++;
     }
 
-    // Patch logos for existing channels if epg.pw has better metadata
+    // Patch logos for existing channels with actual epg.pw metadata
     for (const local of CHANNELS) {
-      if (local.logo) continue;
       const remote = remoteChannels.find(rc => Number(rc.id) === Number(local.id));
       if (remote?.logo) local.logo = remote.logo;
     }
@@ -172,7 +171,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (isT) label = 'Сегодня';
       else if (isY) label = 'Вчера';
       else if (i === 1) label = 'Завтра';
-      html += `<button class="d-btn${sel?' on':''}${isT?' today-btn':''}" data-date="${d.toISOString()}">${label}</button>`;
+      html += `<button class="d-btn${sel?' on':''}${isT?' today-btn':''}" data-date="${toDateStr(d)}">${label}</button>`;
     }
     return html + '</div></div>';
   }
@@ -347,8 +346,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function chLogoHTML(ch) {
-    if (ch.logo) {
-      return `<img src="${ch.logo}" alt="${esc(ch.name)}" loading="lazy" onerror="this.parentNode.innerHTML='<span style=&quot;font-size:10px;font-weight:800;color:${esc(ch.color)}&quot;>${esc(ch.abbr)}</span>'">`;
+    const logo = normalizeLogoUrl(ch.logo);
+    if (logo) {
+      return `<img src="${logo}" alt="${esc(ch.name)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.innerHTML='<span style=&quot;font-size:10px;font-weight:800;color:${esc(ch.color)}&quot;>${esc(ch.abbr)}</span>'">`;
     }
     return `<span style="font-size:10px;font-weight:800;color:${ch.color}">${esc(ch.abbr)}</span>`;
   }
@@ -879,7 +879,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Date buttons
     document.querySelectorAll('[data-date]').forEach(el => {
       el.addEventListener('click', () => {
-        S.date = new Date(el.dataset.date);
+        S.date = parseDateBtnValue(el.dataset.date);
         S.offset = 0;
         render();
       });
@@ -967,6 +967,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     t.textContent = msg;
     t.classList.add('show');
     setTimeout(() => t.classList.remove('show'), 3200);
+  }
+
+  function parseDateBtnValue(v) {
+    // Keep day stable in every client timezone (avoid ISO UTC date shifts)
+    if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return new Date();
+    const [y, m, d] = v.split('-').map(Number);
+    return new Date(y, m - 1, d, 12, 0, 0, 0);
+  }
+
+  function normalizeLogoUrl(value) {
+    if (!value) return '';
+    let url = String(value).trim();
+    if (!url) return '';
+    if (url.startsWith('//')) url = `https:${url}`;
+    if (url.startsWith('http://')) url = `https://${url.slice(7)}`;
+    return url;
   }
 
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
