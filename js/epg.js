@@ -10,7 +10,9 @@
 
 // ===== CONFIG =====
 const EPG_BASE = 'https://epg.pw/api/epg.json';
-const PROXY = 'https://api.allorigins.win/get?url=';
+const PROXY = ' https://secure-272717.vercel.app/';
+const PROXY2 = ' https://secure-272717.tatnet.app/';
+const PROXY3 = ' https://proxyvideo.vercel.app/';
 const TZ = 'Europe/Moscow';
 const CACHE_TTL = 30 * 60 * 1000; // 30 min
 
